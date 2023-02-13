@@ -12,6 +12,7 @@ sbt assembly
 ```
 
 ## Config
+- `topic`: Kafka topic the instance listens to.
 - `channel`: `eq` (equity) or `fu` (future). This is related to table names.
 - `db-type`: `redis` or `mysql`.
 - `kafka-group-id`: Kafka consumer group id. Each database needs a unique id. 
