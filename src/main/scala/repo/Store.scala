@@ -533,8 +533,8 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
         commands.get.xadd(
           obk,
           Map(
-            this.id       -> id,
-            this.maxLevel -> maxLevel,
+            this.id       -> id.toString,
+            this.maxLevel -> maxLevel.toString,
             this.a        -> a,
             this.aq       -> aq,
             this.at       -> at,
@@ -589,16 +589,16 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
         commands.get.xadd(
           tck,
           Map(
-            this.id              -> seq,
-            this.p               -> p.value.toString,
-            this.q               -> q.value.toString,
-            this.s               -> aggressor.asInstanceOf[Char],
-            this.tq              -> tq.value.toString,
-            this.action          -> action.asInstanceOf[Char],
+            this.id -> seq.toString,
+            this.p -> p.value.toString,
+            this.q -> q.value.toString,
+            this.s -> aggressor.asInstanceOf[Char].toString,
+            this.tq -> tq.value.toString,
+            this.action -> action.asInstanceOf[Char].toString,
             this.tradeReportCode -> tradeReportCode.toString,
-            this.dealSource      -> dealSource.asInstanceOf[Char],
-            this.tss             -> marketTs.value.toString,
-            this.tsb             -> bananaTs.value.toString
+            this.dealSource -> dealSource.asInstanceOf[Char].toString,
+            this.tss -> marketTs.value.toString,
+            this.tsb -> bananaTs.value.toString
           ).asJava
         )
       }
@@ -655,10 +655,10 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
         commands.get.xadd(
           tck,
           Map(
-            this.id  -> seq,
+            this.id  -> seq.toString,
             this.p   -> p.value.toString,
             this.q   -> q.value.toString,
-            this.ib  -> ib.value,
+            this.ib  -> ib.value.toString,
             this.tss -> marketTs.value.toString,
             this.tsb -> bananaTs.value.toString
           ).asJava
@@ -693,15 +693,15 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
         commands.get.xadd(
           klk,
           Map(
-            this.o             -> o.value,
-            this.h             -> h.value,
-            this.l             -> l.value,
-            this.c             -> c.value,
-            this.lastAuctionPx -> lastAuctionPx.value,
-            this.avgpx         -> avgpx.value,
-            this.turnOverQty   -> turnOverQty.value,
-            this.tss           -> marketTs.value,
-            this.tsb           -> bananaTs.value
+            this.o -> o.value.toString,
+            this.h -> h.value.toString,
+            this.l -> l.value.toString,
+            this.c -> c.value.toString,
+            this.lastAuctionPx -> lastAuctionPx.value.toString,
+            this.avgpx -> avgpx.value.toString,
+            this.turnOverQty -> turnOverQty.value.toString,
+            this.tss -> marketTs.value.toString,
+            this.tsb -> bananaTs.value.toString
           ).asJava
         )
       }
@@ -733,17 +733,17 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
         commands.get.xadd(
           klk,
           Map(
-            this.o             -> o.value,
-            this.h             -> h.value,
-            this.l             -> l.value,
-            this.c             -> c.value,
-            this.previousClose -> previousClose.value,
-            this.tradedVolume  -> tradedVol.value,
-            this.tradeValue    -> tradedValue.value,
-            this.change        -> change,
-            this.changePercent -> changePercent,
-            this.tss           -> marketTs.value,
-            this.tsb           -> bananaTs.value
+            this.o             -> o.value.toString,
+            this.h             -> h.value.toString,
+            this.l             -> l.value.toString,
+            this.c             -> c.value.toString,
+            this.previousClose -> previousClose.value.toString,
+            this.tradedVolume  -> tradedVol.value.toString,
+            this.tradeValue    -> tradedValue.value.toString,
+            this.change        -> change.toString,
+            this.changePercent -> changePercent.toString,
+            this.tss           -> marketTs.value.toString,
+            this.tsb           -> bananaTs.value.toString
           ).asJava
         )
       }

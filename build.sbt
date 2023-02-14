@@ -12,15 +12,17 @@ lazy val root = (project in file("."))
     idePackagePrefix := Some("com.guardian")
   )
 
-libraryDependencies += "org.apache.kafka"      %% "kafka-streams-scala" % "3.3.2"
-dependencyOverrides += "org.apache.kafka"       % "kafka-clients"       % "3.3.2"
-libraryDependencies += "io.monix"              %% "monix-kafka-1x"      % "1.0.0-RC6"
-libraryDependencies += "io.monix"              %% "monix"               % "3.4.1"
-libraryDependencies += "org.typelevel"         %% "cats-core"           % "2.9.0"
-libraryDependencies += "io.lettuce"             % "lettuce-core"        % "6.2.2.RELEASE"
-libraryDependencies += "com.github.pureconfig" %% "pureconfig"          % "0.17.2"
-libraryDependencies += "ch.qos.logback"         % "logback-classic"     % "1.4.5"
-libraryDependencies += "org.scalatest"         %% "scalatest"           % "3.2.15" % "test"
+libraryDependencies += "org.apache.kafka"        %% "kafka-streams-scala" % "3.3.2"
+dependencyOverrides += "org.apache.kafka"         % "kafka-clients"       % "3.3.2"
+libraryDependencies += "io.monix"                %% "monix-kafka-1x"      % "1.0.0-RC6"
+libraryDependencies += "io.monix"                %% "monix"               % "3.4.1"
+libraryDependencies += "org.typelevel"           %% "cats-core"           % "2.9.0"
+libraryDependencies += "io.lettuce"               % "lettuce-core"        % "6.2.2.RELEASE"
+libraryDependencies += "com.github.pureconfig"   %% "pureconfig"          % "0.17.2"
+libraryDependencies += "org.apache.logging.log4j" % "log4j-api"           % "2.19.0"
+libraryDependencies += "org.apache.logging.log4j" % "log4j-core"          % "2.19.0"
+libraryDependencies += "org.apache.logging.log4j" % "log4j-slf4j2-impl"   % "2.19.0" % Test
+libraryDependencies += "org.scalatest"           %% "scalatest"           % "3.2.15" % "test"
 
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", xs @ _*) => MergeStrategy.discard

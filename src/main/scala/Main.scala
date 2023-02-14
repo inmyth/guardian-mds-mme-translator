@@ -22,7 +22,6 @@ object Main extends App {
         .load[Config]
         .leftMap(e => ConfigError(s"Cannot load config: $e"))
     )
-    _    <- EitherT.rightT[Task, AppError](System.setProperty("logback.configurationFile", s"config/logback.xml"))
     cons <- EitherT.rightT[Task, AppError](Consumer.setup(conf))
     _    <- EitherT(cons.connectToStore)
     _    <- EitherT.right[guardian.AppError](cons.run)

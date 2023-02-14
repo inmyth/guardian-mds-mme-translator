@@ -54,6 +54,7 @@ project/**/metals.sbt
 
 .bsp
 
+/log
 /lib
 /config/application.conf
 /config/logback.xml

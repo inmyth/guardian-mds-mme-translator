@@ -16,7 +16,9 @@ import monix.reactive.Observable
 
 import java.nio.ByteBuffer
 
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
+import scala.language.postfixOps
 
 case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: Store) {
   implicit val scheduler: Scheduler = monix.execution.Scheduler.global
@@ -29,7 +31,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
       .mapEval {
         case (seq, bytes) =>
           for {
-            now <- Task.now(Micro(System.currentTimeMillis() * 1000))
+            now <- Task.now(Micro(System.nanoTime() / 1000))
             msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
             res <- msg match {
 
@@ -159,7 +161,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
           } yield res
       }
 
-  private val pConsumer: monix.reactive.Consumer[Either[AppError, Unit], Unit] = monix.reactive.Consumer.complete
+  private val pConsumer: monix.reactive.Consumer[Either[AppError, Unit], Unit] = monix.reactive.Consumer.foreach(_ => ())
   def run: Task[Unit] =
     for {
       _ <- observable.consumeWith(pConsumer)
@@ -178,8 +180,7 @@ object Consumer {
     val consumerCfg = KafkaConsumerConfig.default.copy(
       bootstrapServers = List(config.kafkaConfig.server),
       groupId = groupId,
-      autoOffsetReset = AutoOffsetReset.Earliest
-
+      autoOffsetReset = AutoOffsetReset.Earliest,
       // you can use this settings for At Most Once semantics:
       //     observableCommitOrder = ObservableCommitOrder.BeforeAck
     )

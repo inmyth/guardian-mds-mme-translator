@@ -31,7 +31,7 @@ private[repo] case class OrderbookItem(
     }
     val (first, rest) = current.splitAt(index)
     val (_, last)     = rest.splitAt(numDeletes)
-    val res = (first ++ last)
+    val res = first ++ last
     res.dropRight(res.size - maxLevel)
   }
 
