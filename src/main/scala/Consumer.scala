@@ -164,6 +164,8 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
     for {
       _ <- observable.consumeWith(pConsumer)
     } yield ()
+
+  def connectToStore: Task[Either[AppError, Unit]] = store.connect
 }
 
 object Consumer {

@@ -24,6 +24,7 @@ object Main extends App {
     )
     _    <- EitherT.rightT[Task, AppError](System.setProperty("logback.configurationFile", s"config/logback.xml"))
     cons <- EitherT.rightT[Task, AppError](Consumer.setup(conf))
+    _    <- EitherT(cons.connectToStore)
     _    <- EitherT.right[guardian.AppError](cons.run)
   } yield ()).value.runToFuture.map {
     case Right(_) => println("App running")
