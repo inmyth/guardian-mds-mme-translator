@@ -161,10 +161,11 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
           } yield res
       }
 
-  private val pConsumer: monix.reactive.Consumer[Either[AppError, Unit], Unit] = monix.reactive.Consumer.foreach(_ => ())
+  private val pConsumer: monix.reactive.Consumer[Either[AppError, Unit], Unit] = monix.reactive.Consumer.complete
   def run: Task[Unit] =
     for {
       _ <- observable.consumeWith(pConsumer)
+      _ <- run
     } yield ()
 
   def connectToStore: Task[Either[AppError, Unit]] = store.connect
