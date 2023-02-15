@@ -182,6 +182,7 @@ object Consumer {
       bootstrapServers = List(config.kafkaConfig.server),
       groupId = groupId,
       autoOffsetReset = AutoOffsetReset.Earliest,
+      maxPollInterval = 10 minute
       // you can use this settings for At Most Once semantics:
       //     observableCommitOrder = ObservableCommitOrder.BeforeAck
     )

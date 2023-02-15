@@ -41,7 +41,7 @@ private[repo] case class OrderbookItem(
       case 'B' => bids
       case _   => asks
     }
-    current.updated(index, Some(price, qty, marketTs))
+    if (index > current.size || current.isEmpty) current else current.updated(index, Some(price, qty, marketTs))
   }
 }
 
