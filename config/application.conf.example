@@ -1,3 +1,5 @@
+channel = eq
+db-type = "redis"
 kafka-config = {
   server = "172.21.252.175:9092"
   topic = "topic_from_receiver"
@@ -5,12 +7,8 @@ kafka-config = {
 redis-config = {
   host = "localhost"
   port = 6379
-  kafka-group-id = "mds-mme-translator-1-MUST-BE-UNIQUE"
 }
 my-sql-config = {
   host = "localhost"
   port = 3306
-  kafka-group-id = "mds-mme-translator-2-MUST-BE-UNIQUE"
 }
-channel = eq
-db-type = "redis"

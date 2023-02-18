@@ -173,15 +173,15 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
 object Consumer {
 
-  def setup(config: Config): Consumer = {
-    val (groupId, store) = config.dbType match {
-      case DbType.redis => (config.redisConfig.kafkaGroupId, Store.redis(config.channel, config.redisConfig))
-      case DbType.mysql => (config.mySqlConfig.kafkaGroupId, Store.mysql(config.channel))
+  def setup(config: Config, groupId: String): Consumer = {
+    val store = config.dbType match {
+      case DbType.redis => Store.redis(config.channel, config.redisConfig)
+      case DbType.mysql => Store.mysql(config.channel)
     }
     val consumerCfg = KafkaConsumerConfig.default.copy(
       bootstrapServers = List(config.kafkaConfig.server),
       groupId = groupId,
-      autoOffsetReset = AutoOffsetReset.Earliest,
+      autoOffsetReset = AutoOffsetReset.Latest, // the starting offset when there is no offset
       maxPollInterval = 10 minute
       // you can use this settings for At Most Once semantics:
       //     observableCommitOrder = ObservableCommitOrder.BeforeAck
