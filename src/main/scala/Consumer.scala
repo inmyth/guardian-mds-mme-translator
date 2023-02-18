@@ -16,7 +16,7 @@ import monix.reactive.Observable
 
 import java.nio.ByteBuffer
 
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.language.postfixOps
 
@@ -181,8 +181,8 @@ object Consumer {
     val consumerCfg = KafkaConsumerConfig.default.copy(
       bootstrapServers = List(config.kafkaConfig.server),
       groupId = groupId,
-      autoOffsetReset = AutoOffsetReset.Latest, // the starting offset when there is no offset
-      maxPollInterval = 10 minute
+      autoOffsetReset = AutoOffsetReset.Earliest, // the starting offset when there is no offset
+      maxPollInterval = 10 minute,
       // you can use this settings for At Most Once semantics:
       //     observableCommitOrder = ObservableCommitOrder.BeforeAck
     )
