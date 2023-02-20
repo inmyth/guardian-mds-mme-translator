@@ -76,7 +76,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   private val tsb      = "tsb"
   private val maxLevel = "maxLevel"
 
-  override def getLastOrderbookItem(symbol: Instrument, maxLevel: Byte): Task[Either[AppError, Option[OrderbookItem]]] =
+  override def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]] =
     (for {
       obk <- EitherT.rightT[Task, AppError](keyOrderbook(symbol))
       res <- EitherT.rightT[Task, AppError](

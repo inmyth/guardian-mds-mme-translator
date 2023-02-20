@@ -31,7 +31,7 @@ abstract class Store(channel: Channel) {
 
   def updateOrderbook(seq: Long, orderbookId: OrderbookId, item: FlatPriceLevelAction): Task[Either[AppError, Unit]] =
     (for {
-      maybeItem <- EitherT(getLastOrderbookItem(item.symbol, item.maxLevel))
+      maybeItem <- EitherT(getLastOrderbookItem(item.symbol))
       lastItem <-
         if (maybeItem.isDefined) {
           EitherT.rightT[Task, AppError](maybeItem.get)
@@ -60,7 +60,7 @@ abstract class Store(channel: Channel) {
       _ <- EitherT(saveOrderbookItem(item.symbol, orderbookId, update))
     } yield ()).value
 
-  def getLastOrderbookItem(symbol: Instrument, maxLevel: Byte): Task[Either[AppError, Option[OrderbookItem]]]
+  def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]]
   def saveOrderbookItem(symbol: Instrument, orderbookId: OrderbookId, item: OrderbookItem): Task[Either[AppError, Unit]]
   def getLastTickerTotalQty(symbol: Instrument): Task[Either[AppError, Qty]]
   def saveTicker(
@@ -154,7 +154,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
     ().asRight[AppError].pure[Task]
   }
 
-  override def getLastOrderbookItem(symbol: Instrument, maxLevel: Byte): Task[Either[AppError, Option[OrderbookItem]]] =
+  override def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]] =
     orderbookDb.getOrElse(symbol.value, Vector.empty).sortWith(_.seq > _.seq).headOption.asRight.pure[Task]
 
   override def updateTicker(

@@ -2,11 +2,11 @@ package com.guardian
 package repo
 
 import Config.Channel
+import entity._
 
 import cats.data.EitherT
 import com.github.jasync.sql.db.Connection
 import com.github.jasync.sql.db.general.ArrayRowData
-import com.guardian.entity.{FlatPriceLevelAction, Instrument, Micro, OrderbookId, Price, Qty}
 import monix.eval.Task
 
 import java.time.{Instant, ZoneId}
@@ -15,7 +15,16 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.javaapi.FutureConverters
 
 class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel) {
-  val zoneId = ZoneId.of("Asia/Bangkok")
+  private val zoneId: ZoneId           = ZoneId.of("Asia/Bangkok")
+  val MDS_DerivativeOrderBook          = "MDS_DerivativeOrderBook"
+  val MDS_EquityOrderBook              = "MDS_EquityOrderBook"
+  val MDS_EquityTradableInstrument     = "MDS_EquityTradableInstrument"
+  val MDS_DerivativeTradableInstrument = "MDS_DerivativeTradableInstrument"
+
+  val (maxLevel, orderbookTable, tradableInstrumentTable) = channel match {
+    case Channel.eq => (10, MDS_EquityOrderBook, MDS_EquityTradableInstrument)
+    case Channel.fu => (5, MDS_DerivativeOrderBook, MDS_DerivativeTradableInstrument)
+  }
 
   val orderTable     = "orders"
   val executionTable = "executions"
@@ -64,21 +73,18 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
 
   override def getSymbol(orderbookId: OrderbookId): Task[Either[AppError, Instrument]] = ???
 
-  val MDS_DerivativeOrderBook = "MDS_DerivativeOrderBook"
-  val MDS_EquityOrderBook     = "MDS_EquityOrderBook"
-  val cSeqNo                  = "SeqNo"
-  val cUpdateTime             = "UpdateTime"
-  val cSourceTime             = "SourceTime"
-  val cReceivingTime          = "ReceivingTime"
-  val cSecName                = "SecName"
-  val cSecCode                = "SecCode"
+  val cSeqNo         = "SeqNo"
+  val cUpdateTime    = "UpdateTime"
+  val cSourceTime    = "SourceTime"
+  val cReceivingTime = "ReceivingTime"
+  val cSecName       = "SecName"
+  val cSecCode       = "SecCode"
 
-  override def getLastOrderbookItem(symbol: Instrument, maxLevel: Byte): Task[Either[AppError, Option[OrderbookItem]]] =
+  override def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]] =
     (for {
-      table <- EitherT.rightT[Task, AppError](if (maxLevel == 10) MDS_EquityOrderBook else MDS_DerivativeOrderBook)
       query <- EitherT.rightT[Task, AppError](
         s"""
-         |SELECT * FROM $table WHERE $cSourceTime=(SELECT max($cSourceTime) FROM $table);
+         |SELECT * FROM $orderbookTable WHERE $cSourceTime=(SELECT max($cSourceTime) FROM $orderbookTable);
          |""".stripMargin
       )
       data <-

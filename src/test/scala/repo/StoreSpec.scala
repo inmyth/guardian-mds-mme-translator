@@ -3,11 +3,10 @@ package repo
 
 import Fixtures._
 import entity.{FlatPriceLevelAction, Qty, Side}
+import repo.InMemImpl.{KlineItem, MarketStatsItem, ProjectedItem}
 
-import com.guardian.repo.InMemImpl.{KlineItem, MarketStatsItem, ProjectedItem}
 import monix.eval.Task
 import monix.execution.Scheduler
-import org.scalatest.PrivateMethodTester
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -20,7 +19,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
       "N" in {
         (for {
           _    <- store.updateOrderbook(seq, oid, action.copy(levelUpdateAction = 'N'))
-          last <- store.getLastOrderbookItem(symbol, maxLevel)
+          last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(
@@ -43,7 +42,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
             oid,
             action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U')
           )
-          last <- store.getLastOrderbookItem(symbol, maxLevel)
+          last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(
@@ -66,7 +65,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
             oid,
             action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3)
           )
-          last <- store.getLastOrderbookItem(symbol, maxLevel)
+          last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(
