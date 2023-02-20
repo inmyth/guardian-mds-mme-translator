@@ -42,7 +42,8 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: MarketByPriceMessage =>
                 (for {
-                  symbol <- EitherT(store.getSymbol(OrderbookId(a.getOrderBookId)))
+                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  symbol <- EitherT(store.getSymbol(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   acts <- EitherT.rightT[Task, AppError](
@@ -64,7 +65,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       )
                       .toVector
                   )
-                  _ <- EitherT.right[AppError](acts.map(p => store.updateOrderbook(seq, p)).sequence)
+                  _ <- EitherT.right[AppError](acts.map(p => store.updateOrderbook(seq, oid, p)).sequence)
                 } yield ()).value
 
               case a: TradeTickerMessageSet =>
@@ -176,7 +177,7 @@ object Consumer {
   def setup(config: Config, groupId: String): Consumer = {
     val store = config.dbType match {
       case DbType.redis => Store.redis(config.channel, config.redisConfig)
-      case DbType.mysql => Store.mysql(config.channel)
+      case DbType.mysql => Store.mysql(config.channel, config.mySqlConfig)
     }
     val consumerCfg = KafkaConsumerConfig.default.copy(
       bootstrapServers = List(config.kafkaConfig.server),

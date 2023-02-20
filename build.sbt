@@ -18,6 +18,7 @@ libraryDependencies += "io.monix"                 %% "monix-kafka-1x"      % "1.
 libraryDependencies += "io.monix"                 %% "monix"               % "3.4.1"
 libraryDependencies += "org.typelevel"            %% "cats-core"           % "2.9.0"
 libraryDependencies += "io.lettuce"                % "lettuce-core"        % "6.2.2.RELEASE"
+libraryDependencies += "com.github.jasync-sql"     % "jasync-mysql"        % "2.1.23"
 libraryDependencies += "com.github.pureconfig"    %% "pureconfig"          % "0.17.2"
 libraryDependencies += "org.apache.logging.log4j" %% "log4j-api-scala"     % "12.0"
 libraryDependencies += "org.apache.logging.log4j"  % "log4j-api"           % "2.19.0"

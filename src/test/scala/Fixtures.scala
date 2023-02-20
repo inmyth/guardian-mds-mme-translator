@@ -24,16 +24,16 @@ object Fixtures {
   val bidQty8: Qty      = Qty(650L)
   val bidQty9: Qty      = Qty(600L)
   val bidQty10: Qty     = Qty(550L)
-  val askTime1: Micro        = Micro(1675749643)
-  val askTime2: Micro        = Micro(1675749645)
-  val askTime3: Micro        = Micro(1675749647)
-  val askTime4: Micro        = Micro(1675749649)
-  val askTime5: Micro        = Micro(1675749651)
-  val askTime6: Micro        = Micro(1675749653)
-  val askTime7: Micro        = Micro(1675749655)
-  val askTime8: Micro        = Micro(1675749657)
-  val askTime9: Micro        = Micro(1675749659)
-  val askTime10: Micro       = Micro(1675749661)
+  val askTime1: Micro   = Micro(1675749643)
+  val askTime2: Micro   = Micro(1675749645)
+  val askTime3: Micro   = Micro(1675749647)
+  val askTime4: Micro   = Micro(1675749649)
+  val askTime5: Micro   = Micro(1675749651)
+  val askTime6: Micro   = Micro(1675749653)
+  val askTime7: Micro   = Micro(1675749655)
+  val askTime8: Micro   = Micro(1675749657)
+  val askTime9: Micro   = Micro(1675749659)
+  val askTime10: Micro  = Micro(1675749661)
 
   val askPrice1: Price  = Price(102)
   val askPrice2: Price  = Price(103)
@@ -55,16 +55,16 @@ object Fixtures {
   val askQty8: Qty      = Qty(1650L)
   val askQty9: Qty      = Qty(1700L)
   val askQty10: Qty     = Qty(1750L)
-  val bidTime1: Micro        = Micro(1675751686)
-  val bidTime2: Micro        = Micro(1675751688)
-  val bidTime3: Micro        = Micro(1675751690)
-  val bidTime4: Micro        = Micro(1675751692)
-  val bidTime5: Micro        = Micro(1675751694)
-  val bidTime6: Micro        = Micro(1675751696)
-  val bidTime7: Micro        = Micro(1675751698)
-  val bidTime8: Micro        = Micro(1675751700)
-  val bidTime9: Micro        = Micro(1675751702)
-  val bidTime10: Micro       = Micro(1675751704)
+  val bidTime1: Micro   = Micro(1675751686)
+  val bidTime2: Micro   = Micro(1675751688)
+  val bidTime3: Micro   = Micro(1675751690)
+  val bidTime4: Micro   = Micro(1675751692)
+  val bidTime5: Micro   = Micro(1675751694)
+  val bidTime6: Micro   = Micro(1675751696)
+  val bidTime7: Micro   = Micro(1675751698)
+  val bidTime8: Micro   = Micro(1675751700)
+  val bidTime9: Micro   = Micro(1675751702)
+  val bidTime10: Micro  = Micro(1675751704)
 
   val bids: Seq[Some[(Price, Qty, Micro)]] = Vector(
     Some(bidPrice1, bidQty1, bidTime1),
@@ -94,7 +94,7 @@ object Fixtures {
 
   val channel: Config.Channel = Config.Channel.eq
   val side: Side              = Side('B'.asInstanceOf[Byte])
-  val maxLevel                = 10
+  val maxLevel: Byte          = 10
   val oid: OrderbookId        = OrderbookId(37)
   val symbol: Instrument      = Instrument("PTT")
   val seq                     = 677L
