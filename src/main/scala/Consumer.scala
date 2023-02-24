@@ -38,12 +38,30 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
               case a: SecondsMessage => store.saveSecond(a.getSeconds)
 
               case a: OrderBookDirectoryMessageSetImpl =>
-                store.saveSymbolByOrderbookId(OrderbookId(a.getOrderBookId), Instrument(a.getSymbol))
+                store.saveTradableInstrument(
+                  OrderbookId(a.getOrderBookId),
+                  Instrument(a.getSymbol),
+                  secType = new String(a.getFinancialProduct), // both
+                  secDesc = new String(a.getLongName),         //
+                  allowShortSell = a.getAllowShortSell,
+                  allowNVDR = a.getAllowNvdr,
+                  allowShortSellOnNVDR = a.getAllowShortSellOnNvdr,
+                  allowTTF = a.getAllowTtf,
+                  isValidForTrading = a.getStatus,
+                  isOddLot = a.getRoundLotSize,
+                  parValue = a.getParValue,
+                  sectorNumber = new String(a.getSectorCode),
+                  underlyingSecCode = a.getUnderlying, // or underlyingOrderbookId
+                  underlyingSecName = new String(a.getUnderlyingName),
+                  maturityDate = a.getExpirationDate, // YYYYMMDD
+                  contractMultiplier = a.getContractSize,
+                  settlMethod = "NA"
+                )
 
               case a: MarketByPriceMessage =>
                 (for {
-                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
-                  symbol <- EitherT(store.getSymbol(oid))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   acts <- EitherT.rightT[Task, AppError](
@@ -70,11 +88,13 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: TradeTickerMessageSet =>
                 (for {
-                  symbol <- EitherT(store.getSymbol(OrderbookId(a.getOrderBookId)))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateTicker(
+                      oid = oid,
                       symbol = symbol,
                       seq = seq,
                       p = Price(a.getPrice),
@@ -83,6 +103,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       dealSource = a.getDealSource,
                       action = a.getAction,
                       tradeReportCode = a.getTradeReportCode,
+                      dealDateTime = a.getDealDateTime,
                       marketTs = mms,
                       bananaTs = now
                     )
@@ -91,7 +112,8 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: EquilibriumPriceMessage =>
                 (for {
-                  symbol <- EitherT(store.getSymbol(OrderbookId(a.getOrderBookId)))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   matchedVol <- EitherT.rightT[Task, AppError](
@@ -100,6 +122,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   imbalanceQty <- EitherT.rightT[Task, AppError](Qty(a.getBidQuantity - a.getAskQuantity))
                   _ <- EitherT(
                     store.updateProjected(
+                      oid = oid,
                       symbol = symbol,
                       seq = seq,
                       p = Price(a.getPrice),
@@ -113,10 +136,11 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: TradeStatisticsMessageSet =>
                 (for {
-                  symbol <- EitherT(store.getSymbol(OrderbookId(a.getOrderBookId)))
+                  symbol <- EitherT(store.getInstrument(OrderbookId(a.getOrderBookId)))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
+
                     store.updateKline(
                       symbol = symbol,
                       seq = seq,
@@ -135,7 +159,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: IndexPriceMessageSet =>
                 (for {
-                  symbol <- EitherT(store.getSymbol(OrderbookId(a.getOrderBookId)))
+                  symbol <- EitherT(store.getInstrument(OrderbookId(a.getOrderBookId)))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
@@ -151,6 +175,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       tradedVol = Qty(a.getTradedVolume),
                       change = a.getChange,
                       changePercent = a.getChangePercent,
+                      tradeTs = a.getTimestamp,
                       marketTs = mms,
                       bananaTs = now
                     )
@@ -183,7 +208,7 @@ object Consumer {
       bootstrapServers = List(config.kafkaConfig.server),
       groupId = groupId,
       autoOffsetReset = AutoOffsetReset.Earliest, // the starting offset when there is no offset
-      maxPollInterval = 10 minute,
+      maxPollInterval = 10 minute
       // you can use this settings for At Most Once semantics:
       //     observableCommitOrder = ObservableCommitOrder.BeforeAck
     )

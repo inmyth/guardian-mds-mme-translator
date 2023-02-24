@@ -1,20 +1,67 @@
 package com.guardian
 package repo
 
+import Config.RedisConfig
 import Fixtures._
 import entity.Qty
-import repo.InMemImpl.{KlineItem, MarketStatsItem, ProjectedItem}
 
+import io.lettuce.core.api.sync.RedisCommands
+import io.lettuce.core.{Limit, Range}
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
-class StoreSpec extends AsyncWordSpec with Matchers {
-  implicit val ec: Scheduler = monix.execution.Scheduler.Implicits.global
-  import StoreSpec._
+import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala}
 
-  "store" when {
+class RedisImplSpec extends AsyncWordSpec with Matchers {
+  import RedisImplSpec._
+  implicit val ec: Scheduler = monix.execution.Scheduler.Implicits.global
+
+  "RedisImpl" when {
+    "connect and flushAll" should {
+      "connect to db and clear all data" in {
+        (for {
+          _ <- store.connect
+          _ <- store.asInstanceOf[RedisImpl].flushAll
+        } yield ()).runToFuture.map(_ shouldBe ())
+      }
+    }
+    "saveTradableInstrument, getInstrument" should {
+      "save the instrument and retrieve it" in {
+        (for {
+          _ <- store.asInstanceOf[RedisImpl].flushAll
+          _ <- store.saveTradableInstrument(
+            oid = oid,
+            symbol = symbol,
+            secType = secType,
+            secDesc = secDesc,
+            allowShortSell = allowShortSell,
+            allowNVDR = allowNVDR,
+            allowShortSellOnNVDR = allowShortSellOnNVDR,
+            allowTTF = allowTTF,
+            isValidForTrading = isValidForTrading,
+            isOddLot = isOddLot,
+            parValue = parValue,
+            sectorNumber = sectorNumber,
+            underlyingSecCode = underlyingSecCode,
+            underlyingSecName = underlyingSecName,
+            maturityDate = maturityDate,
+            contractMultiplier = contractMultiplier,
+            settlMethod = settlMethod
+          )
+          symbol <- store.getInstrument(oid)
+        } yield symbol).runToFuture.map(_ shouldBe Right(symbol))
+      }
+    }
+    "saveSecond, getSecond" should {
+      "save the unix second and retrieve it" in {
+        (for {
+          _   <- store.saveSecond(second)
+          res <- store.getSecond
+        } yield res).runToFuture.map(_ shouldBe Right(second))
+      }
+    }
     "updateOrderbook" when {
       "N" in {
         (for {
@@ -155,40 +202,18 @@ class StoreSpec extends AsyncWordSpec with Matchers {
         }
       }
     }
-    "updateProjected" in {
+    "updateProjected, updateKline, updateMarketStats" in {
       (for {
-        _ <-
-          store
-            .updateProjected(
-              oid = oid,
-              symbol = symbol,
-              seq = seq,
-              p = askPrice1,
-              q = askQty1,
-              ib = askQty2,
-              marketTs = marketTs,
-              bananaTs = bananaTs
-            )
-        db <- Task {
-          val x = store.asInstanceOf[InMemImpl].getClass.getDeclaredField("projectedDb")
-          x.setAccessible(true)
-          x.get(store).asInstanceOf[Map[String, Vector[ProjectedItem]]]
-        }
-      } yield db).runToFuture.map(
-        _.head._2 shouldBe Vector(
-          ProjectedItem(
-            seq = seq,
-            p = askPrice1,
-            q = askQty1,
-            ib = askQty2,
-            marketTs = marketTs,
-            bananaTs = bananaTs
-          )
+        _ <- store.updateProjected(
+          oid = oid,
+          symbol = symbol,
+          seq = seq,
+          p = askPrice1,
+          q = askQty1,
+          ib = askQty2,
+          marketTs = marketTs,
+          bananaTs = bananaTs
         )
-      )
-    }
-    "updateKline" in {
-      (for {
         _ <- store.updateKline(
           symbol = symbol,
           seq = seq,
@@ -202,30 +227,6 @@ class StoreSpec extends AsyncWordSpec with Matchers {
           marketTs = marketTs,
           bananaTs = bananaTs
         )
-        db <- Task {
-          val x = store.asInstanceOf[InMemImpl].getClass.getDeclaredField("klineDb")
-          x.setAccessible(true)
-          x.get(store).asInstanceOf[Map[String, Vector[KlineItem]]]
-        }
-      } yield db).runToFuture.map(
-        _.head._2 shouldBe Vector(
-          KlineItem(
-            seq = seq,
-            o = askPrice1,
-            h = askPrice2,
-            l = askPrice3,
-            c = askPrice4,
-            lauctpx = askPrice5,
-            avgpx = askPrice6,
-            turnOverQty = askQty1,
-            marketTs = marketTs,
-            bananaTs = bananaTs
-          )
-        )
-      )
-    }
-    "updateMarketStats" in {
-      (for {
         _ <- store.updateMarketStats(
           symbol = symbol,
           seq = seq,
@@ -242,35 +243,37 @@ class StoreSpec extends AsyncWordSpec with Matchers {
           marketTs = marketTs,
           bananaTs = bananaTs
         )
-        db <- Task {
-          val x = store.asInstanceOf[InMemImpl].getClass.getDeclaredField("marketStatsDb")
-          x.setAccessible(true)
-          x.get(store).asInstanceOf[Map[String, Vector[MarketStatsItem]]]
+        com <- Task {
+          val command = store.asInstanceOf[RedisImpl].getClass.getDeclaredField("commands")
+          command.setAccessible(true)
+          command.get(store).asInstanceOf[Option[RedisCommands[String, String]]]
         }
-      } yield db).runToFuture.map(
-        _.head._2 shouldBe Vector(
-          MarketStatsItem(
-            seq = seq,
-            o = askQty1,
-            h = askQty2,
-            l = askQty3,
-            c = askQty4,
-            previousClose = askQty5,
-            tradedVol = askQty6,
-            tradedValue = askQty7,
-            change = change,
-            changePercent = changePercent,
-            tradeTs = tradeTs,
-            marketTs = marketTs,
-            bananaTs = bananaTs
-          )
+        id <- Task {
+          val id = store.asInstanceOf[RedisImpl].getClass.getDeclaredField("id")
+          id.setAccessible(true)
+          id.get(store).asInstanceOf[String]
+        }
+        prjKey <- Task(store.keyProjected(symbol))
+        kliKey <- Task(store.keyKlein(symbol))
+        marKey <- Task(store.keyMarketStats(symbol))
+        prjId <- Task(
+          com.get
+            .xrevrange(prjKey, Range.create("-", "+"), Limit.create(0, 1))
+            .asScala
+            .head
+            .getBody
+            .asScala(id)
+            .toLong
         )
-      )
+        kliSz <- Task(com.get.xrevrange(kliKey, Range.create("-", "+"), Limit.create(0, 1)).asScala.size)
+        marSz <- Task(com.get.xrevrange(marKey, Range.create("-", "+"), Limit.create(0, 1)).asScala.size)
+      } yield (prjId, kliSz, marSz)).runToFuture.map(_ shouldBe (seq, 1, 1))
     }
   }
 }
 
-object StoreSpec {
+object RedisImplSpec {
 
-  val store: Store = new InMemImpl(channel)
+  val redisConfig: RedisConfig = RedisConfig("localhost", 6379, None)
+  val store: Store             = Store.redis(channel, redisConfig)
 }

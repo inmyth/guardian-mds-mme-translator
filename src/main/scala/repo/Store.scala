@@ -13,7 +13,7 @@ import io.lettuce.core.RedisClient
 import monix.eval.Task
 
 abstract class Store(channel: Channel) {
-  val symbolReferenceTable                 = s"${channel.toString}:symbol_reference"
+  val keyTradableInstrument              = s"${channel.toString}:symbol_reference"
   val keySecond                            = s"${channel.toString}:second"
   val keyOrderbook: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
   val keyTicker: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
@@ -22,12 +22,33 @@ abstract class Store(channel: Channel) {
   val keyMarketStats: Instrument => String = (symbol: Instrument) => s"id:mkt:${symbol.value}"
 
   def connect: Task[Either[AppError, Unit]]
+
   def disconnect: Task[Either[AppError, Unit]]
 
   def saveSecond(unixSecond: Int): Task[Either[AppError, Unit]]
+
   def getSecond: Task[Either[AppError, Int]]
-  def saveSymbolByOrderbookId(oid: OrderbookId, symbol: Instrument): Task[Either[AppError, Unit]]
-  def getSymbol(orderbookId: OrderbookId): Task[Either[AppError, Instrument]]
+
+  def saveTradableInstrument(
+      oid: OrderbookId,
+      symbol: Instrument,
+      secType: String,
+      secDesc: String,
+      allowShortSell: Byte,
+      allowNVDR: Byte,
+      allowShortSellOnNVDR: Byte,
+      allowTTF: Byte,
+      isValidForTrading: Byte,
+      isOddLot: Int,
+      parValue: Long,
+      sectorNumber: String,
+      underlyingSecCode: Int,
+      underlyingSecName: String,
+      maturityDate: Int,
+      contractMultiplier: Int,
+      settlMethod: String
+  ): Task[Either[AppError, Unit]]
+  def getInstrument(orderbookId: OrderbookId): Task[Either[AppError, Instrument]]
 
   def updateOrderbook(seq: Long, orderbookId: OrderbookId, item: FlatPriceLevelAction): Task[Either[AppError, Unit]] =
     (for {
@@ -61,9 +82,13 @@ abstract class Store(channel: Channel) {
     } yield ()).value
 
   def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]]
+
   def saveOrderbookItem(symbol: Instrument, orderbookId: OrderbookId, item: OrderbookItem): Task[Either[AppError, Unit]]
+
   def getLastTickerTotalQty(symbol: Instrument): Task[Either[AppError, Qty]]
+
   def saveTicker(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       p: Price,
@@ -73,10 +98,13 @@ abstract class Store(channel: Channel) {
       dealSource: Byte,
       action: Byte,
       tradeReportCode: Short,
+      dealDateTime: Long,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
+
   def updateTicker(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       p: Price,
@@ -85,10 +113,13 @@ abstract class Store(channel: Channel) {
       dealSource: Byte,
       action: Byte,
       tradeReportCode: Short,
+      dealDateTime: Long,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
+
   def updateProjected(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       p: Price,
@@ -97,6 +128,7 @@ abstract class Store(channel: Channel) {
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
+
   def updateKline(
       symbol: Instrument,
       seq: Long,
@@ -110,6 +142,7 @@ abstract class Store(channel: Channel) {
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
+
   def updateMarketStats(
       symbol: Instrument,
       seq: Long,
@@ -122,6 +155,7 @@ abstract class Store(channel: Channel) {
       tradedValue: Qty,
       change: Long,
       changePercent: Int,
+      tradeTs: Long,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
@@ -140,15 +174,37 @@ class InMemImpl(channel: Channel) extends Store(channel) {
 
   override def disconnect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
 
-  override def saveSymbolByOrderbookId(oid: OrderbookId, symbol: Instrument): Task[Either[AppError, Unit]] = {
+  override def saveTradableInstrument(
+      oid: OrderbookId,
+      symbol: Instrument,
+      secType: String,
+      secDesc: String,
+      allowShortSell: Byte,
+      allowNVDR: Byte,
+      allowShortSellOnNVDR: Byte,
+      allowTTF: Byte,
+      isValidForTrading: Byte,
+      isOddLot: Int,
+      parValue: Long,
+      sectorNumber: String,
+      underlyingSecCode: Int,
+      underlyingSecName: String,
+      maturityDate: Int,
+      contractMultiplier: Int,
+      settlMethod: String
+  ): Task[Either[AppError, Unit]] = {
     symbolReferenceDb = symbolReferenceDb + (oid -> symbol)
     ().asRight.pure[Task]
   }
 
-  override def getSymbol(oid: OrderbookId): Task[Either[AppError, Instrument]] =
+  override def getInstrument(oid: OrderbookId): Task[Either[AppError, Instrument]] =
     symbolReferenceDb.get(oid).fold(SymbolNotFound(oid).asLeft[Instrument])(p => p.asRight).pure[Task]
 
-  override def saveOrderbookItem(symbol: Instrument, orderbookId: OrderbookId, item: OrderbookItem): Task[Either[AppError, Unit]] = {
+  override def saveOrderbookItem(
+      symbol: Instrument,
+      orderbookId: OrderbookId,
+      item: OrderbookItem
+  ): Task[Either[AppError, Unit]] = {
     val list = orderbookDb.getOrElse(symbol.value, Vector.empty)
     orderbookDb += (symbol.value -> (Vector(item) ++ list))
     ().asRight[AppError].pure[Task]
@@ -158,6 +214,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
     orderbookDb.getOrElse(symbol.value, Vector.empty).sortWith(_.seq > _.seq).headOption.asRight.pure[Task]
 
   override def updateTicker(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       p: Price,
@@ -166,6 +223,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       dealSource: Byte,
       action: Byte,
       tradeReportCode: Short,
+      dealDateTime: Long,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
@@ -177,6 +235,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       })
       _ <- EitherT(
         saveTicker(
+          oid = oid,
           symbol = symbol,
           seq = seq,
           p = p,
@@ -186,6 +245,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
           dealSource = dealSource,
           action = action,
           tradeReportCode = tradeReportCode,
+          dealDateTime = dealDateTime,
           marketTs = marketTs,
           bananaTs = bananaTs
         )
@@ -210,6 +270,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       .pure[Task]
 
   override def saveTicker(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       p: Price,
@@ -219,6 +280,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       dealSource: Byte,
       action: Byte,
       tradeReportCode: Short,
+      dealDateTime: Long,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
@@ -241,6 +303,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
   }
 
   override def updateProjected(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       p: Price,
@@ -306,6 +369,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       tradedValue: Qty,
       change: Long,
       changePercent: Int,
+      tradeTs: Long,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
@@ -322,6 +386,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
         tradedValue = tradedValue,
         change = change,
         changePercent = changePercent,
+        tradeTs = tradeTs,
         marketTs = marketTs,
         bananaTs = bananaTs
       )
@@ -375,6 +440,7 @@ object InMemImpl {
       tradedValue: Qty,
       change: Long,
       changePercent: Int,
+      tradeTs: Long,
       marketTs: Micro,
       bananaTs: Micro
   )

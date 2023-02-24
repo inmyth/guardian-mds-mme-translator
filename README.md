@@ -19,3 +19,6 @@ sbt assembly
 - `group-id-suffix-override`: suffix on the group id. This is used only in testing. 
 
 If group id is the same the instance will cooperate with each other to consume the data.  
+
+## Test
+- Run docker container: redis at localhost:6039 and mysql at localhost:3306

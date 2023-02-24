@@ -92,12 +92,47 @@ object Fixtures {
     Some(askPrice10, askQty10, askTime10)
   )
 
-  val channel: Config.Channel = Config.Channel.eq
-  val side: Side              = Side('B'.asInstanceOf[Byte])
-  val maxLevel: Byte          = 10
-  val oid: OrderbookId        = OrderbookId(37)
-  val symbol: Instrument      = Instrument("PTT")
-  val seq                     = 677L
-  val marketTs: Micro         = Micro(1675769709L)
-  val bananaTs: Micro         = Micro(1675769709L)
+  val channel: Config.Channel    = Config.Channel.eq
+  val side: Side                 = Side('B'.asInstanceOf[Byte])
+  val maxLevel: Byte             = 10
+  val oid: OrderbookId           = OrderbookId(37)
+  val symbol: Instrument         = Instrument("PTT")
+  val seq                        = 677L
+  val second: Int                = 1677238290
+  val dealDateTime: Long         = 1675763719L
+  val tradeTs: Long              = 1675763719123L
+  val marketTs: Micro            = Micro(1675769709L)
+  val bananaTs: Micro            = Micro(1675769709L)
+  val change                     = 100000L
+  val changePercent              = 33
+  val secType                    = "equity"
+  val secDesc                    = "SecurityLongName"
+  val allowShortSell: Byte       = 'Y'
+  val allowNVDR: Byte            = 'A'
+  val allowShortSellOnNVDR: Byte = 'Y'
+  val allowTTF: Byte             = 'Y'
+  val isValidForTrading: Byte    = 'A'
+  val isOddLot: Int              = 1200
+  val parValue                   = 23099440L
+  val sectorNumber               = "SET"
+  val underlyingSecCode          = 123
+  val underlyingSecName          = "UDR"
+  val maturityDate               = 20220314
+  val contractMultiplier         = 3
+  val settlMethod                = "NA"
+
+  val action: FlatPriceLevelAction = FlatPriceLevelAction(
+    oid = oid,
+    symbol = symbol,
+    marketTs = askTime1,
+    bananaTs = bananaTs,
+    maxLevel = 10,
+    price = askPrice1,
+    qty = askQty1,
+    level = 1,
+    side = Side('A'),
+    levelUpdateAction = 'N',
+    numDeletes = 0
+  )
+
 }
