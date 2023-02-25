@@ -8,15 +8,15 @@ import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
 import com.github.jasync.sql.db.Connection
 import com.github.jasync.sql.db.general.ArrayRowData
-import com.guardian.AppError.SecondNotFound
+import com.guardian.AppError.{MySqlError, SecondNotFound}
 import monix.eval.Task
 
-import java.time.{Instant, ZoneId}
+import java.time.{Instant, LocalDateTime, ZoneId}
 
 import scala.jdk.CollectionConverters._
 import scala.jdk.javaapi.FutureConverters
 
-class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel) {
+class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel) {
   private val zoneId: ZoneId              = ZoneId.of("Asia/Bangkok")
   private var marketSecondDb: Option[Int] = None
 
@@ -27,11 +27,11 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
     }
     (
       ml,
-      s"MDS_${which}Orderbook",
-      s"MDS_${which}Ticker",
-      s"MDS_${which}Day",
-      s"MDS_${which}ProjectedPrice",
-      s"MDS_${which}InstrumentTable"
+      s"mdsdb.MDS_${which}OrderBook",
+      s"mdsdb.MDS_${which}Ticker",
+      s"mdsdb.MDS_${which}Day",
+      s"mdsdb.MDS_${which}ProjectedPrice",
+      s"mdsdb.MDS_${which}TradableInstrument"
     )
   }
 
@@ -91,6 +91,9 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
   val cContractMultiplier   = "ContractMultiplier"
   val cSettlMethod          = "SettlMethod"
 
+  val dateFromMessageFmt = new java.text.SimpleDateFormat("yyyyMMDD")
+  val dateToSqlFmt       = new java.text.SimpleDateFormat("yyyy-MM-dd")
+//  val dateTimeMicrosToSqlFmt = new java.text.SimpleDateFormat("yyyy-MM-dd")
   override def saveTradableInstrument(
       oid: OrderbookId,
       symbol: Instrument,
@@ -114,7 +117,7 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
       sql <- EitherT.rightT[Task, AppError] {
         channel match {
           case Channel.eq => s"""
-                                |INSERT INTO $keyTradableInstrument
+                                |INSERT INTO $tradableInstrumentTable
                                 |($cSecCode, $cSecName, $cSecType, $cSecDesc, $cAllowShortSell, $cAllowNVDR,
                                 |$cAllowShortSellOnNVDR, $cAllowTTF, $cIsValidForTrading,
                                 |$cIsOddLot, $cParValue, $cSectorNumber
@@ -126,7 +129,7 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
                                 |""".stripMargin
           case Channel.fu =>
             s"""
-                                |INSERT INTO $keyTradableInstrument
+                                |INSERT INTO $tradableInstrumentTable
                                 |($cSecCode, $cSecName, $cSecType, $cSecDesc,
                                 |$cUnderlyingSecCode, $cUnderlyingSecName, $cMaturityDate, $cContractMultiplier, $cSettlMethod
                                 |) VALUES(?,?,?,?,?,?,?,?,?)
@@ -170,6 +173,8 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
             )
 
           case Channel.fu =>
+            val dateMsg         = dateFromMessageFmt.parse(maturityDate.toString)
+            val maturityDateSql = dateToSqlFmt.format(dateMsg)
             Vector(
               secCode,
               secName,
@@ -177,7 +182,7 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
               secDesc,
               underlyingSecCode,
               underlyingSecName,
-              maturityDate,
+              maturityDateSql,
               contractMultiplier,
               settlMethod,
               // Insert ends here, update starts here
@@ -186,20 +191,23 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
               secDesc,
               underlyingSecCode,
               underlyingSecName,
-              maturityDate,
+              maturityDateSql,
               contractMultiplier,
               settlMethod
             )
         }
       }
-      _ <- EitherT.rightT[Task, AppError](connection.sendPreparedStatement(sql, params.asJava))
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
+
     } yield ()).value
 
   override def getInstrument(orderbookId: OrderbookId): Task[Either[AppError, Instrument]] =
     (for {
       sql <- EitherT.rightT[Task, AppError](
         s"""
-         |SELECT $cSecName from $keyTradableInstrument WHERE $cSecCode = ${orderbookId.value}
+         |SELECT $cSecName from $tradableInstrumentTable WHERE $cSecCode = ${orderbookId.value}
          |""".stripMargin
       )
       data <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql))))
@@ -217,11 +225,16 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
       )
     } yield res).value
 
+  private def fromSqlDateToMicro(p: ArrayRowData, key: String): Micro =
+    Micro(
+      s"${p.getDate(key).atZone(zoneId).toInstant.toEpochMilli.toString}${(p.getDate(key).getNano % 1000000 / 1000).toString}".toLong
+    )
+
   override def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]] =
     (for {
       sql <- EitherT.rightT[Task, AppError](
         s"""
-         |SELECT * FROM $orderbookTable WHERE $cSourceTime=(SELECT max($cSourceTime) FROM $orderbookTable) LIMIT 1;
+         |SELECT * FROM $orderbookTable WHERE $cUpdateTime=(SELECT max($cUpdateTime) FROM $orderbookTable) LIMIT 1;
          |""".stripMargin
       )
       data <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql))))
@@ -232,24 +245,28 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
           .map(_.asInstanceOf[ArrayRowData])
           .map(p => {
             val seq      = p.getLong(cSeqNo)
-            val marketTs = Micro(p.getDate(cSourceTime).atZone(zoneId).toInstant.toEpochMilli * 1000)
-            val bananaTs = Micro(p.getDate(cReceivingTime).atZone(zoneId).toInstant.toEpochMilli * 1000)
-            val asks = (1 to maxLevel).map(i => {
-              val maybePx  = Option(p.getInt(cOrderBookMDAskPrice(i)))
-              val maybeQty = Option(p.getLong(cOrderBookMDAskSize(i)))
-              (maybePx, maybeQty) match {
-                case (None, None) => None
-                case _            => Some(Price(maybePx.fold(0)(p => p)), Qty(maybeQty.fold(0L)(p => p)), Micro(0L))
-              }
-            })
-            val bids = (1 to maxLevel).map(i => {
-              val maybePx  = Option(p.getInt(cOrderBookMDBidPrice(i)))
-              val maybeQty = Option(p.getLong(cOrderBookMDBidSize(i)))
-              (maybePx, maybeQty) match {
-                case (None, None) => None
-                case _            => Some(Price(maybePx.fold(0)(p => p)), Qty(maybeQty.fold(0L)(p => p)), Micro(0L))
-              }
-            })
+            val bananaTs = fromSqlDateToMicro(p, cReceivingTime)
+            val marketTs = fromSqlDateToMicro(p, cSourceTime)
+            val asks = (1 to maxLevel)
+              .map(i => {
+                val maybePx  = Option(p.getInt(cOrderBookMDAskPrice(i)))
+                val maybeQty = Option(p.getLong(cOrderBookMDAskSize(i)))
+                (maybePx, maybeQty) match {
+                  case (None, None) => None
+                  case _            => Some(Price(maybePx.fold(0)(p => p)), Qty(maybeQty.fold(0L)(p => p)), Micro(0L))
+                }
+              })
+              .filter(_.isDefined)
+            val bids = (1 to maxLevel)
+              .map(i => {
+                val maybePx  = Option(p.getInt(cOrderBookMDBidPrice(i)))
+                val maybeQty = Option(p.getLong(cOrderBookMDBidSize(i)))
+                (maybePx, maybeQty) match {
+                  case (None, None) => None
+                  case _            => Some(Price(maybePx.fold(0)(p => p)), Qty(maybeQty.fold(0L)(p => p)), Micro(0L))
+                }
+              })
+              .filter(_.isDefined)
             OrderbookItem(
               seq = seq,
               maxLevel = maxLevel,
@@ -263,6 +280,13 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
       )
     } yield res).value
 
+  private def microToSqlDateTime(m: Micro): LocalDateTime =
+    Instant
+      .ofEpochMilli(m.value / 1000)
+      .plusNanos(m.value % 1000 * 1000)
+      .atZone(zoneId)
+      .toLocalDateTime
+
   override def saveOrderbookItem(
       symbol: Instrument,
       orderbookId: OrderbookId,
@@ -271,31 +295,56 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
     (for {
       asks <- EitherT.rightT[Task, AppError](item.asks.filter(_.isDefined).map(_.get))
       bids <- EitherT.rightT[Task, AppError](item.bids.filter(_.isDefined).map(_.get))
-      sql <- EitherT.rightT[Task, AppError](
+      sql <- EitherT.rightT[Task, AppError] {
+        val bCols = if (bids.nonEmpty) {
+          s"""
+             |,${(1 to bids.size).map(p => cOrderBookMDBidPrice(p)).mkString(",")},
+             |${(1 to bids.size).map(p => cOrderBookMDBidSize(p)).mkString(",")}
+             |""".stripMargin
+        }
+        else {
+          ""
+        }
+        val aCols = if (asks.nonEmpty) {
+          s"""
+             |,${(1 to asks.size).map(p => cOrderBookMDAskPrice(p)).mkString(",")},
+             |${(1 to asks.size).map(p => cOrderBookMDAskSize(p)).mkString(",")}
+             |""".stripMargin
+        }
+        else {
+          ""
+        }
+        val bPar = if (bids.nonEmpty) {
+          s"""
+             |,${(1 to 2 * bids.size).map(_ => "?").mkString(",")}
+             |""".stripMargin
+        }
+        else {
+          ""
+        }
+        val aPar = if (asks.nonEmpty) {
+          s"""
+             |,${(1 to 2 * asks.size).map(_ => "?").mkString(",")}
+             |""".stripMargin
+        }else {
+          ""
+        }
         s"""
          |INSERT INTO $orderbookTable
-         |($cUpdateTime, $cSourceTime, $cReceivingTime, $cSeqNo, $cSecCode, $cSecName,
-         |${(1 to bids.size).map(p => cOrderBookMDBidPrice(p)).mkString(", ")},
-         |${(1 to bids.size).map(p => cOrderBookMDBidSize(p)).mkString(", ")},
-         |${(1 to asks.size).map(p => cOrderBookMDAskPrice(p)).mkString(", ")},
-         |${(1 to asks.size).map(p => cOrderBookMDAskSize(p)).mkString(", ")})
-         |VALUES
-         |(?,?,?,?,?,?,
-         |${(1 to 2 * bids.size).map(_ => "?").mkString(",")},
-         |${(1 to 2 * asks.size).map(_ => "?").mkString(",")}
-         |)
-         |""".stripMargin
-      )
+         |($cUpdateTime, $cSourceTime, $cReceivingTime, $cSeqNo, $cSecCode,$cSecName$bCols$aCols)
+         |VALUES(?,?,?,?,?,?$bPar$aPar)""".stripMargin
+      }
+      _ = println(sql)
       params <- EitherT.rightT[Task, AppError] {
-        val sourceTime =
-          Instant.ofEpochMilli(item.marketTs.value / 1000).atZone(ZoneId.systemDefault()).toLocalDate.toString
-        val receivingTime =
-          Instant.ofEpochMilli(item.bananaTs.value / 1000).atZone(ZoneId.systemDefault()).toLocalDate.toString
+        val sourceTime    = microToSqlDateTime(item.marketTs).toString
+        val receivingTime = microToSqlDateTime(item.bananaTs).toString
         Vector(sourceTime, sourceTime, receivingTime, item.seq, orderbookId.value, symbol.value) ++
           bids.map(_._1.value) ++ bids.map(_._2.value) ++
           asks.map(_._1.value) ++ asks.map(_._2.value)
       }
-      _ <- EitherT.rightT[Task, AppError](connection.sendPreparedStatement(sql, params.asJava))
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
     } yield ()).value
 
   override def getLastTickerTotalQty(symbol: Instrument): Task[Either[AppError, Qty]] =
@@ -379,7 +428,9 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
           matchType
         )
       }
-      _ <- EitherT.rightT[Task, AppError](connection.sendPreparedStatement(sql, params.asJava))
+      _ <- EitherT.rightT[Task, AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
     } yield ()).value
 
   override def updateTicker(
@@ -443,9 +494,21 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
         val projPrice     = p.value
         val projVolume    = q.value
         val projImbalance = ib.value
-        Vector(projTime, sendingTime, receivingTime, seqNo, secCode, secName, projPrice, projVolume, projImbalance)
+        Vector(
+          projTime,
+          sendingTime,
+          receivingTime,
+          seqNo,
+          secCode,
+          secName,
+          projPrice,
+          projVolume,
+          projImbalance
+        )
       }
-      _ <- EitherT.rightT[Task, AppError](connection.sendPreparedStatement(sql, params.asJava))
+      _ <- EitherT.rightT[Task, AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
     } yield ()).value
 
   override def updateKline(
@@ -492,4 +555,93 @@ class MySqlImpl(channel: Channel, connection: Connection) extends Store(channel)
       }
     } yield ()).value
 
+  def createTables: Task[Either[AppError, Unit]] =
+    (for {
+      drop <- EitherT.rightT[Task, AppError](s"""
+           |DROP DATABASE mdsdb;
+           |""".stripMargin)
+      sch  <- EitherT.rightT[Task, AppError](s"""
+           |CREATE DATABASE mdsdb CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+           |""".stripMargin)
+      eti  <- EitherT.rightT[Task, AppError](s"""
+           |CREATE TABLE mdsdb.MDS_EquityTradableInstrument(
+           |  $cSecCode int NOT NULL,
+           |  $cSecName varchar(20) NULL,
+           |  $cSecType varchar(20) NULL,
+           |  $cSecDesc varchar(100) NULL,
+           |  $cAllowShortSell varchar(20) NULL,
+           |  $cAllowNVDR varchar(20) NULL,
+           |  $cAllowShortSellOnNVDR varchar(20) NULL,
+           |  $cAllowTTF varchar(20) NULL,
+           |  $cIsValidForTrading varchar(1) NULL,
+           |  $cIsOddLot varchar(1) NULL,
+           |  $cParValue bigint NULL,
+           |  $cIPOPrice bigint NULL,
+           |  $cSectorNumber varchar(20) NULL,
+           |  PRIMARY KEY ($cSecCode)
+           |);
+           |""".stripMargin)
+      dti  <- EitherT.rightT[Task, AppError](s"""
+           |CREATE TABLE mdsdb.MDS_DerivativeTradableInstrument(
+           |  $cSecCode int NOT NULL,
+           |  $cSecName varchar (20) NULL,
+           |  $cSecType varchar (20) NULL,
+           |  $cSecDesc varchar (100) NULL,
+           |  $cUnderlyingSecCode int NOT NULL,
+           |  $cUnderlyingSecName varchar (20) NULL,
+           |  $cMaturityDate datetime (6) NULL,
+           |  $cContractMultiplier decimal(14, 6) NULL,
+           |  $cSettlMethod varchar (20) NULL,
+           |  PRIMARY KEY ($cSecCode)
+           |);
+           |""".stripMargin)
+      eob <- EitherT.rightT[Task, AppError](
+        s"""
+           |CREATE TABLE mdsdb.MDS_EquityOrderBook(
+           |  $cUpdateTime datetime (6) NOT NULL,
+           |  $cSourceTime datetime (6) NULL,
+           |  $cReceivingTime datetime (6) NULL,
+           |  $cSeqNo bigint NOT NULL,
+           |  $cSecCode int NOT NULL,
+           |  $cSecName varchar (20) NULL,
+           |  ${(1 to 10).map(i => s"${cOrderBookMDAskPrice(i)} int NULL").mkString(",")},
+           |  ${(1 to 10).map(i => s"${cOrderBookMDAskSize(i)} bigint NULL").mkString(",")},
+           |  ${(1 to 10).map(i => s"${cOrderBookMDBidPrice(i)} int NULL").mkString(",")},
+           |  ${(1 to 10).map(i => s"${cOrderBookMDBidSize(i)} bigint NULL").mkString(",")},
+           |  CONSTRAINT PK_MDS_EquityOrderBook PRIMARY KEY CLUSTERED
+           |  (
+           |    $cUpdateTime ASC,
+           |    $cSeqNo ASC,
+           |    $cSecCode ASC
+           |  ));
+           |""".stripMargin
+      )
+      dob <- EitherT.rightT[Task, AppError](
+        s"""
+           |CREATE TABLE mdsdb.MDS_DerivativeOrderBook(
+           |  $cUpdateTime datetime (6) NOT NULL,
+           |  $cSourceTime datetime (6) NULL,
+           |  $cReceivingTime datetime (6) NULL,
+           |  $cSeqNo bigint NOT NULL,
+           |  $cSecCode int NOT NULL,
+           |  $cSecName varchar (20) NULL,
+           |  ${(1 to 5).map(i => s"${cOrderBookMDAskPrice(i)} int NULL").mkString(",")},
+           |  ${(1 to 5).map(i => s"${cOrderBookMDAskSize(i)} bigint NULL").mkString(",")},
+           |  ${(1 to 5).map(i => s"${cOrderBookMDBidPrice(i)} int NULL").mkString(",")},
+           |  ${(1 to 5).map(i => s"${cOrderBookMDBidSize(i)} bigint NULL").mkString(",")},
+           |  CONSTRAINT PK_MDS_DerivativeOrderBook PRIMARY KEY CLUSTERED
+           |  (
+           |    $cUpdateTime ASC,
+           |    $cSeqNo ASC,
+           |    $cSecCode ASC
+           |  ));
+           |""".stripMargin
+      )
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(drop))))
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))))
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))))
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dti))))
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eob))))
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dob))))
+    } yield ()).value
 }

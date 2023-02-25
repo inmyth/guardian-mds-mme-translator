@@ -21,4 +21,12 @@ sbt assembly
 If group id is the same the instance will cooperate with each other to consume the data.  
 
 ## Test
-- Run docker container: redis at localhost:6039 and mysql at localhost:3306
+- Run docker container: redis at localhost:6039 and 
+- mysql
+```
+host port:
+3306 -> 3306
+33060 -> 33060
+env. variable:
+mysql_allow_empty_password = true
+```

@@ -454,6 +454,6 @@ object Store {
   def mysql(channel: Channel, mySqlConfig: MySqlConfig): Store = {
     val connection =
       MySQLConnectionBuilder.createConnectionPool(s"jdbc:mysql://${mySqlConfig.host}:${mySqlConfig.port}/mdsdb")
-    new MySqlImpl(channel, connection)
+    new MySQLImpl(channel, connection)
   }
 }

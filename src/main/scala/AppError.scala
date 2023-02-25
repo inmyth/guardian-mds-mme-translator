@@ -14,4 +14,6 @@ object AppError {
 
   case class ConfigError(m: String) extends AppError(201, s"Cannot load config: $m")
   case class RedisConnectionError(m: String) extends AppError(202, s"Cannot connect to Redis: $m")
+
+  case class MySqlError(m: String) extends AppError(203, s"MySQL Error: $m")
 }

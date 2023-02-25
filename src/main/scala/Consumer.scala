@@ -48,7 +48,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   allowShortSellOnNVDR = a.getAllowShortSellOnNvdr,
                   allowTTF = a.getAllowTtf,
                   isValidForTrading = a.getStatus,
-                  isOddLot = a.getRoundLotSize,
+                  isOddLot = 1,
                   parValue = a.getParValue,
                   sectorNumber = new String(a.getSectorCode),
                   underlyingSecCode = a.getUnderlying, // or underlyingOrderbookId
