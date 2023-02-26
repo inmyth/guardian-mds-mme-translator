@@ -326,7 +326,8 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
           s"""
              |,${(1 to 2 * asks.size).map(_ => "?").mkString(",")}
              |""".stripMargin
-        }else {
+        }
+        else {
           ""
         }
         s"""
@@ -334,7 +335,6 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
          |($cUpdateTime, $cSourceTime, $cReceivingTime, $cSeqNo, $cSecCode,$cSecName$bCols$aCols)
          |VALUES(?,?,?,?,?,?$bPar$aPar)""".stripMargin
       }
-      _ = println(sql)
       params <- EitherT.rightT[Task, AppError] {
         val sourceTime    = microToSqlDateTime(item.marketTs).toString
         val receivingTime = microToSqlDateTime(item.bananaTs).toString
@@ -351,7 +351,7 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
     (for {
       sql <- EitherT.rightT[Task, AppError](
         s"""
-         |SELECT $cVolume FROM $tickerTable WHERE $cUpdateTime=(SELECT max($cUpdateTime) FROM $tickerTable) LIMIT 1;
+         |SELECT $cVolume FROM $tickerTable WHERE $cTradeTime=(SELECT max($cTradeTime) FROM $tickerTable) LIMIT 1;
          |""".stripMargin
       )
       data <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql))))
@@ -397,23 +397,23 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
          |INSERT INTO $tickerTable
          |($cTradeTime, $cSendingTime, $cReceivingTime, $cSeqNo, $cSecCode, $cLastPrice, $cVolume, $cBidAggressor, $cAskAggressor, $cIsTradeReport, $cMatchType)
          |VALUES
-         |(?,?,?,?,?,?,?,?,,?,?,?)
+         |(?,?,?,?,?,?,?,?,?,?,?)
          |""".stripMargin)
       params <- EitherT.rightT[Task, AppError] {
         val tradeTime     = dealDateTime
-        val sendingTime   = marketTs
-        val receivingTime = bananaTs
+        val sendingTime   = microToSqlDateTime(marketTs)
+        val receivingTime = microToSqlDateTime(bananaTs)
         val seqNo         = seq
         val secCode       = oid.value
         val lastPrice     = p.value
         val volume        = q.value
-        val (bidAggressor, askAggressor) = aggressor.asInstanceOf[Char] match {
+        val (bidAggressor, askAggressor): (Byte, Byte) = aggressor.asInstanceOf[Char] match {
           case 'B' => (1, 0)
           case 'A' => (0, 1)
           case _   => (0, 0)
         }
-        val isTradeReport = if (dealSource == 3) 1 else 0
-        val matchType     = dealSource
+        val isTradeReport: Byte = if (dealSource == 3) 1 else 0
+        val matchType           = dealSource
         Vector(
           tradeTime,
           sendingTime,
@@ -637,11 +637,39 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
            |  ));
            |""".stripMargin
       )
+      tck <- EitherT.rightT[Task, AppError] {
+        Vector("Equity", "Derivative").map(p => s"""
+             |CREATE TABLE mdsdb.MDS_${p}Ticker(
+             |  $cTradeTime bigint NOT NULL,
+             |  $cSendingTime datetime(6) NULL,
+             |  $cReceivingTime datetime(6) NULL,
+             |  $cSeqNo bigint NOT NULL,
+             |  $cSecCode int NOT NULL,
+             |  $cSecName varchar(20) NULL,
+             |  $cLastPrice decimal(14, 6) NULL,
+             |  $cVolume bigint NULL,
+             |  $cBidAggressor bit NOT NULL,
+             |  $cAskAggressor bit NOT NULL,
+             |  $cIsTradeReport bit NOT NULL,
+             |  $cMatchType int NULL,
+             | CONSTRAINT PK_MDS_${p}Ticker PRIMARY KEY CLUSTERED
+             |(
+             |	$cTradeTime ASC,
+             |	$cSeqNo ASC,
+             |	$cSecCode ASC
+             |));
+             |""".stripMargin)
+      }
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(drop))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dti))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eob))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dob))))
+      _ <-
+        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.head))))
+      _ <-
+        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.last))))
+
     } yield ()).value
 }

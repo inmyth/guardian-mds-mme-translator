@@ -103,7 +103,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       dealSource = a.getDealSource,
                       action = a.getAction,
                       tradeReportCode = a.getTradeReportCode,
-                      dealDateTime = a.getDealDateTime,
+                      dealDateTime = a.getDealDateTime, //nanosec
                       marketTs = mms,
                       bananaTs = now
                     )
