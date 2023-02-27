@@ -60,23 +60,23 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
     } yield s).value
 
   override def saveTradableInstrument(
-      oid: OrderbookId,
-      symbol: Instrument,
-      secType: String,
-      secDesc: String,
-      allowShortSell: Byte,
-      allowNVDR: Byte,
-      allowShortSellOnNVDR: Byte,
-      allowTTF: Byte,
-      isValidForTrading: Byte,
-      isOddLot: Int,
-      parValue: Long,
-      sectorNumber: String,
-      underlyingSecCode: Int,
-      underlyingSecName: String,
-      maturityDate: Int,
-      contractMultiplier: Int,
-      settlMethod: String
+                                       oid: OrderbookId,
+                                       symbol: Instrument,
+                                       secType: String,
+                                       secDesc: String,
+                                       allowShortSell: Byte,
+                                       allowNVDR: Byte,
+                                       allowShortSellOnNVDR: Byte,
+                                       allowTTF: Byte,
+                                       isValidForTrading: Byte,
+                                       lotRoundSize: Int,
+                                       parValue: Long,
+                                       sectorNumber: String,
+                                       underlyingSecCode: Int,
+                                       underlyingSecName: String,
+                                       maturityDate: Int,
+                                       contractMultiplier: Int,
+                                       settlMethod: String
   ): Task[Either[AppError, Unit]] =
     (for {
       _ <- EitherT.rightT[Task, AppError](commands.get.hset(keyTradableInstrument, oid.value.toString, symbol.value))

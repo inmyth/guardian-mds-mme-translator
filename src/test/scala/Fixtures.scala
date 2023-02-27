@@ -112,7 +112,7 @@ object Fixtures {
   val allowShortSellOnNVDR: Byte = 'Y'
   val allowTTF: Byte             = 'Y'
   val isValidForTrading: Byte    = 'A'
-  val isOddLot: Int              = 1
+  val lotRoundSize: Int          = 1
   val parValue                   = 23099440L
   val sectorNumber               = "SET"
   val underlyingSecCode          = 123

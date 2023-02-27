@@ -13,7 +13,7 @@ import io.lettuce.core.RedisClient
 import monix.eval.Task
 
 abstract class Store(channel: Channel) {
-  val keyTradableInstrument              = s"${channel.toString}:symbol_reference"
+  val keyTradableInstrument                = s"${channel.toString}:symbol_reference"
   val keySecond                            = s"${channel.toString}:second"
   val keyOrderbook: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
   val keyTicker: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
@@ -39,7 +39,7 @@ abstract class Store(channel: Channel) {
       allowShortSellOnNVDR: Byte,
       allowTTF: Byte,
       isValidForTrading: Byte,
-      isOddLot: Int,
+      lotRoundSize: Int,
       parValue: Long,
       sectorNumber: String,
       underlyingSecCode: Int,
@@ -184,7 +184,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       allowShortSellOnNVDR: Byte,
       allowTTF: Byte,
       isValidForTrading: Byte,
-      isOddLot: Int,
+      lotRoundSize: Int,
       parValue: Long,
       sectorNumber: String,
       underlyingSecCode: Int,

@@ -3,11 +3,14 @@ package repo
 
 import Config.{Channel, MySqlConfig}
 import Fixtures._
-import entity.{Micro, Qty, Side}
+import entity.{Micro, Price, Qty, Side}
 
+import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
+
+import scala.jdk.javaapi.FutureConverters
 
 class MySQLImplSpec extends AsyncWordSpec with Matchers {
   import MySQLImplSpec._
@@ -36,7 +39,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               allowShortSellOnNVDR = allowShortSellOnNVDR,
               allowTTF = allowTTF,
               isValidForTrading = isValidForTrading,
-              isOddLot = isOddLot,
+              lotRoundSize = lotRoundSize,
               parValue = parValue,
               sectorNumber = sectorNumber,
               underlyingSecCode = underlyingSecCode,
@@ -226,6 +229,79 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
           }
         }
       }
+      "updateProjected" when {
+        "last item is empty" should {
+          "insert and not update isFinal" in {
+            (for {
+              _ <- store.updateProjected(
+                oid = oid,
+                symbol = symbol,
+                seq = seq,
+                p = askPrice1,
+                q = askQty1,
+                ib = askQty2,
+                marketTs = marketTs,
+                bananaTs = bananaTs
+              )
+              res <- store.getLast2ndProjectedIsFinal
+//              _ <- Task.fromFuture(
+//                FutureConverters.asScala(store.connection.sendPreparedStatement(s"TRUNCATE ${store.projectedTable}"))
+//              )
+            } yield res).runToFuture.map(_ shouldBe Right(None))
+          }
+        }
+        "last price is not empty and current price is not int.min" should {
+          "insert current item only" in {
+            (for {
+              _ <- store.updateProjected(
+                oid = oid,
+                symbol = symbol,
+                seq = seq,
+                p = askPrice2,
+                q = askQty2,
+                ib = askQty2,
+                marketTs = new Micro(marketTs.value + 1),
+                bananaTs = bananaTs
+              )
+              res <- store.getLast2ndProjectedIsFinal
+            } yield res).runToFuture.map(_ shouldBe Right(Some(false)))
+          }
+        }
+        "last price is not empty and current price is int.min" should {
+          "insert current and update the last item as final" in {
+            (for {
+              _ <- store.updateProjected(
+                oid = oid,
+                symbol = symbol,
+                seq = seq,
+                p = Price(Int.MinValue),
+                q = askQty2,
+                ib = askQty2,
+                marketTs = Micro(marketTs.value + 2),
+                bananaTs = bananaTs
+              )
+              res <- store.getLast2ndProjectedIsFinal
+            } yield res).runToFuture.map(_ shouldBe Right(Some(true)))
+          }
+        }
+        "last price is int.min and current price is int.min" should {
+          "insert current only" in {
+            (for {
+              _ <- store.updateProjected(
+                oid = oid,
+                symbol = symbol,
+                seq = seq,
+                p = Price(Int.MinValue),
+                q = askQty3,
+                ib = askQty3,
+                marketTs = Micro(marketTs.value + 3),
+                bananaTs = bananaTs
+              )
+              res <- store.getLast2ndProjectedIsFinal
+            } yield res).runToFuture.map(_ shouldBe Right(Some(false)))
+          }
+        }
+      }
     }
 
     "fu" when {
@@ -243,7 +319,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               allowShortSellOnNVDR = allowShortSellOnNVDR,
               allowTTF = allowTTF,
               isValidForTrading = isValidForTrading,
-              isOddLot = isOddLot,
+              lotRoundSize = lotRoundSize,
               parValue = parValue,
               sectorNumber = sectorNumber,
               underlyingSecCode = underlyingSecCode,
@@ -435,7 +511,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               tq4 <- store.getLastTickerTotalQty(symbol)
             } yield (tq1, tq2, tq3, tq4)).runToFuture
               .map(
-                _ shouldBe(Right(Qty(askQty1.value)), Right(Qty(askQty2.value)), Right(Qty(askQty3.value)), Right(
+                _ shouldBe (Right(Qty(askQty1.value)), Right(Qty(askQty2.value)), Right(Qty(askQty3.value)), Right(
                   Qty(askQty4.value)
                 ))
               )

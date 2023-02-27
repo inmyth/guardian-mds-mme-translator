@@ -41,7 +41,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
             allowShortSellOnNVDR = allowShortSellOnNVDR,
             allowTTF = allowTTF,
             isValidForTrading = isValidForTrading,
-            isOddLot = isOddLot,
+            lotRoundSize = lotRoundSize,
             parValue = parValue,
             sectorNumber = sectorNumber,
             underlyingSecCode = underlyingSecCode,

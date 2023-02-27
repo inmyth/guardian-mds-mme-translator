@@ -11,13 +11,14 @@ import com.github.jasync.sql.db.general.ArrayRowData
 import com.guardian.AppError.{MySqlError, SecondNotFound}
 import monix.eval.Task
 
+import java.lang
 import java.time.{Instant, LocalDateTime, ZoneId}
 
 import scala.jdk.CollectionConverters._
 import scala.jdk.javaapi.FutureConverters
 
-class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel) {
-  private val zoneId: ZoneId              = ZoneId.of("Asia/Bangkok")
+class MySQLImpl(channel: Channel, val connection: Connection) extends Store(channel) {
+  import MySQLImpl._
   private var marketSecondDb: Option[Int] = None
 
   val (maxLevel, orderbookTable, tickerTable, dayTable, projectedTable, tradableInstrumentTable) = {
@@ -93,7 +94,7 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
 
   val dateFromMessageFmt = new java.text.SimpleDateFormat("yyyyMMDD")
   val dateToSqlFmt       = new java.text.SimpleDateFormat("yyyy-MM-dd")
-//  val dateTimeMicrosToSqlFmt = new java.text.SimpleDateFormat("yyyy-MM-dd")
+
   override def saveTradableInstrument(
       oid: OrderbookId,
       symbol: Instrument,
@@ -104,7 +105,7 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
       allowShortSellOnNVDR: Byte,
       allowTTF: Byte,
       isValidForTrading: Byte,
-      isOddLot: Int,
+      lotRoundSize: Int,
       parValue: Long,
       sectorNumber: String,
       underlyingSecCode: Int,
@@ -155,7 +156,7 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
               allowShortSellOnNVDR.asInstanceOf[Char].toString,
               allowTTF.asInstanceOf[Char].toString,
               isValidForTrading.asInstanceOf[Char].toString,
-              isOddLot,
+              if (lotRoundSize == 1) "Y" else "N",
               parValue,
               sectorNumber,
               // Insert ends here, update startds here
@@ -167,7 +168,7 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
               allowShortSellOnNVDR.asInstanceOf[Char].toString,
               allowTTF.asInstanceOf[Char].toString,
               isValidForTrading.asInstanceOf[Char].toString,
-              isOddLot,
+              if (lotRoundSize == 1) "Y" else "N",
               parValue,
               sectorNumber
             )
@@ -279,13 +280,6 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
           .headOption
       )
     } yield res).value
-
-  private def microToSqlDateTime(m: Micro): LocalDateTime =
-    Instant
-      .ofEpochMilli(m.value / 1000)
-      .plusNanos(m.value % 1000 * 1000)
-      .atZone(zoneId)
-      .toLocalDateTime
 
   override def saveOrderbookItem(
       symbol: Instrument,
@@ -467,6 +461,71 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
       )
     } yield ()).value
 
+  def getLastProjected: Task[Either[AppError, Option[LastProjectedItem]]] =
+    (for {
+      sql <- EitherT.rightT[Task, AppError](
+        s"""
+         |SELECT $cProjTime, $cSeqNo, $cSecCode, $cProjPrice FROM $projectedTable WHERE
+         |$cProjTime=(SELECT max($cProjTime) FROM $projectedTable) LIMIT 1;
+         |""".stripMargin
+      )
+      data <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql))))
+      res <- EitherT.rightT[Task, AppError](
+        data.getRows
+          .stream()
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => {
+            LastProjectedItem(
+              projTime = fromSqlDateToMicro(p, cProjTime),
+              seq = p.getLong(cSeqNo),
+              secCode = p.getInt(cSecCode),
+              price = Price(p.getInt(cProjPrice))
+            )
+          })
+          .headOption
+      )
+    } yield res).value
+
+  def getLast2ndProjectedIsFinal: Task[Either[AppError, Option[lang.Boolean]]] =
+    (for {
+      sql <- EitherT.rightT[Task, AppError](
+        s"""
+           |SELECT $cisFinal, $cProjTime FROM $projectedTable ORDER BY $cProjTime DESC LIMIT 2;
+           |""".stripMargin
+      )
+      data <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql))))
+      res <- EitherT.rightT[Task, AppError](
+        data.getRows
+          .stream()
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => p.getBoolean(cisFinal))
+          .lift(1)
+      )
+    } yield res).value
+
+  def updateProjectedIsFinal(procTime: Micro, seq: Long, secCode: Int, isFinal: Boolean): Task[Either[AppError, Unit]] =
+    (for {
+      sql <- EitherT.rightT[Task, AppError](
+        s"""
+         |UPDATE $projectedTable SET $cisFinal = ? WHERE $cProjTime = ? AND $cSeqNo = ? AND $cSecCode = ?
+         |""".stripMargin
+      )
+      params <- EitherT.rightT[Task, AppError](
+        Vector(
+          isFinal,
+          microToSqlDateTime(procTime),
+          seq,
+          secCode
+        )
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
+
+    } yield ()).value
+
   override def updateProjected(
       oid: OrderbookId,
       symbol: Instrument,
@@ -478,16 +537,22 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
+      last <- EitherT(getLastProjected)
+      _ <- (p, last) match {
+        case (now, l) if now.value == Int.MinValue && l.isDefined && l.get.price.value >= 0L =>
+          EitherT(updateProjectedIsFinal(last.get.projTime, last.get.seq, last.get.secCode, isFinal = true))
+        case _ => EitherT.rightT[Task, AppError](())
+      }
       sql <- EitherT.rightT[Task, AppError](s"""
          |INSERT INTO $projectedTable ($cProjTime, $cSendingTime, $cReceivingTime, $cSeqNo, $cSecCode, $cSecName,
          |$cProjPrice, $cProjVolume, $cProjImbalance
          |) VALUES
-         |(?,?,?,?,?,?,?,?,?) DUPLICATE KEY UPDATE $cSecCode = $cSecCode
+         |(?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE $cSecCode = $cSecCode
          |""".stripMargin)
       params <- EitherT.rightT[Task, AppError] {
-        val projTime      = marketTs.value
-        val sendingTime   = marketTs.value
-        val receivingTime = bananaTs.value
+        val projTime      = microToSqlDateTime(marketTs)
+        val sendingTime   = microToSqlDateTime(marketTs)
+        val receivingTime = microToSqlDateTime(bananaTs)
         val seqNo         = seq
         val secCode       = oid.value
         val secName       = symbol.value
@@ -506,7 +571,7 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
           projImbalance
         )
       }
-      _ <- EitherT.rightT[Task, AppError](
+      _ <- EitherT.right[AppError](
         Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
       )
     } yield ()).value
@@ -660,6 +725,27 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
              |));
              |""".stripMargin)
       }
+      prj <- EitherT.rightT[Task, AppError] {
+        Vector("Equity", "Derivative").map(p => s"""
+             |CREATE TABLE mdsdb.MDS_${p}ProjectedPrice(
+             |	$cProjTime datetime(6) NOT NULL,
+             |	$cSendingTime datetime(6) NULL,
+             |	$cReceivingTime datetime(6) NULL,
+             |	$cSeqNo bigint NOT NULL,
+             |	$cSecCode int NOT NULL,
+             |	$cSecName varchar(20) NULL,
+             |	$cProjPrice int NULL,
+             |	$cProjVolume bigint NULL,
+             |	$cProjImbalance bigint NULL,
+             |	$cisFinal bit NOT NULL DEFAULT 0,
+             | CONSTRAINT PK_MDS_${p}ProjectedPrice PRIMARY KEY CLUSTERED
+             |(
+             |	$cProjTime ASC,
+             |	$cSeqNo ASC,
+             |	$cSecCode ASC
+             |));
+             |""".stripMargin)
+      }
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(drop))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))))
@@ -670,6 +756,22 @@ class MySQLImpl(channel: Channel, connection: Connection) extends Store(channel)
         EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.head))))
       _ <-
         EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.last))))
-
+      _ <-
+        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.head))))
+      _ <-
+        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.last))))
     } yield ()).value
+}
+
+object MySQLImpl {
+  private val zoneId: ZoneId = ZoneId.of("Asia/Bangkok")
+
+  private def microToSqlDateTime(m: Micro): LocalDateTime =
+    Instant
+      .ofEpochMilli(m.value / 1000)
+      .plusNanos(m.value % 1000 * 1000)
+      .atZone(zoneId)
+      .toLocalDateTime
+
+  case class LastProjectedItem(projTime: Micro, seq: Long, secCode: Int, price: Price)
 }
