@@ -3,13 +3,17 @@ package repo
 
 import Config.{Channel, MySqlConfig}
 import Fixtures._
-import entity.{Micro, Price, Qty, Side}
+import entity.{Micro, OrderbookId, Price, Qty, Side}
 
+import com.github.jasync.sql.db.general.ArrayRowData
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
+import java.lang
+
+import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.jdk.javaapi.FutureConverters
 
 class MySQLImplSpec extends AsyncWordSpec with Matchers {
@@ -46,7 +50,8 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               underlyingSecName = underlyingSecName,
               maturityDate = maturityDate,
               contractMultiplier = contractMultiplier,
-              settlMethod = settlMethod
+              settlMethod = settlMethod,
+              marketTs = marketTs
             )
             sym <- store.getInstrument(oid)
           } yield sym).runToFuture.map(_ shouldBe Right(symbol))
@@ -228,6 +233,57 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               )
           }
         }
+        "storing bid or ask aggressor" should {
+          "choose the right column to store" in {
+            (for {
+              _ <- store.updateTicker(
+                oid = oid,
+                symbol = symbol,
+                seq = seq,
+                p = askPrice5,
+                q = askQty5,
+                aggressor = 'A',
+                dealSource = 1,
+                action = 1,
+                tradeReportCode = 20,
+                dealDateTime = dealDateTime + 20,
+                askTime5,
+                bananaTs
+              )
+              res1 <- getTickerBidAskAggressor(store, dealDateTime + 20, seq, oid)
+              _ <- store.updateTicker(
+                oid = oid,
+                symbol = symbol,
+                seq = seq,
+                p = askPrice5,
+                q = askQty5,
+                aggressor = 'B',
+                dealSource = 1,
+                action = 1,
+                tradeReportCode = 20,
+                dealDateTime = dealDateTime + 21,
+                askTime5,
+                bananaTs
+              )
+              res2 <- getTickerBidAskAggressor(store, dealDateTime + 21, seq, oid)
+              _ <- store.updateTicker(
+                oid = oid,
+                symbol = symbol,
+                seq = seq,
+                p = askPrice5,
+                q = askQty5,
+                aggressor = 'N',
+                dealSource = 1,
+                action = 1,
+                tradeReportCode = 20,
+                dealDateTime = dealDateTime + 22,
+                askTime5,
+                bananaTs
+              )
+              res3 <- getTickerBidAskAggressor(store, dealDateTime + 22, seq, oid)
+            } yield (res1, res2, res3)).runToFuture.map(_ shouldBe ((false, true), (true, false), (false, false)))
+          }
+        }
       }
       "updateProjected" when {
         "last item is empty" should {
@@ -244,9 +300,6 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 bananaTs = bananaTs
               )
               res <- store.getLast2ndProjectedIsFinal
-//              _ <- Task.fromFuture(
-//                FutureConverters.asScala(store.connection.sendPreparedStatement(s"TRUNCATE ${store.projectedTable}"))
-//              )
             } yield res).runToFuture.map(_ shouldBe Right(None))
           }
         }
@@ -302,6 +355,14 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
           }
         }
       }
+      "updateMySqlIPOPrice" should {
+        "update the ipo price of an instrument in tradable instrument table" in {
+          (for {
+            _   <- store.updateMySqlIPOPrice(oid, Price(100))
+            res <- getIPOPrice(store, oid)
+          } yield res).runToFuture.map(_ shouldBe Price(100))
+        }
+      }
     }
 
     "fu" when {
@@ -326,7 +387,8 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               underlyingSecName = underlyingSecName,
               maturityDate = maturityDate,
               contractMultiplier = contractMultiplier,
-              settlMethod = settlMethod
+              settlMethod = settlMethod,
+              marketTs = marketTs
             )
             sym <- store.getInstrument(oid)
           } yield sym).runToFuture.map(_ shouldBe Right(symbol))
@@ -527,4 +589,47 @@ object MySQLImplSpec {
   val mysqlConfig: MySqlConfig = MySqlConfig("localhost", 3306, None)
   val storeEq: MySQLImpl       = Store.mysql(channel, mysqlConfig).asInstanceOf[MySQLImpl]
   val storeFu: MySQLImpl       = Store.mysql(Channel.fu, mysqlConfig).asInstanceOf[MySQLImpl]
+
+  def getIPOPrice(store: MySQLImpl, oid: OrderbookId): Task[Price] =
+    for {
+      data <- Task.fromFuture(
+        FutureConverters.asScala(
+          store.connection.sendPreparedStatement(
+            s"SELECT IPOPrice, SecCode from ${store.tradableInstrumentTable} WHERE SecCode = ${oid.value}",
+            Vector().asJava
+          )
+        )
+      )
+      res <- Task(
+        data.getRows
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => Price(p.getInt("IPOPrice")))
+          .head
+      )
+    } yield res
+  def getTickerBidAskAggressor(
+      store: MySQLImpl,
+      tradeTime: Long,
+      seq: Long,
+      oid: OrderbookId
+  ): Task[(lang.Boolean, lang.Boolean)] =
+    for {
+      data <- Task.fromFuture(
+        FutureConverters.asScala(
+          store.connection.sendPreparedStatement(
+            s"""SELECT BidAggressor, AskAggressor, TradeTime, SeqNo, SecCode from ${store.tickerTable} WHERE
+             |TradeTime = $tradeTime AND SecCode = ${oid.value} AND SeqNo = $seq""".stripMargin,
+            Vector().asJava
+          )
+        )
+      )
+      res <- Task(
+        data.getRows
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => (p.getBoolean("BidAggressor"), p.getBoolean("AskAggressor")))
+          .head
+      )
+    } yield res
 }

@@ -1,14 +1,14 @@
 package com.guardian
 package repo
 
+import AppError.SecondNotFound
 import Config.Channel
-import entity.{Price, _}
+import entity._
 
 import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
 import com.github.jasync.sql.db.Connection
 import com.github.jasync.sql.db.general.ArrayRowData
-import com.guardian.AppError.{MySqlError, SecondNotFound}
 import monix.eval.Task
 
 import java.lang
@@ -91,9 +91,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   val cMaturityDate         = "MaturityDate"
   val cContractMultiplier   = "ContractMultiplier"
   val cSettlMethod          = "SettlMethod"
-
-  val dateFromMessageFmt = new java.text.SimpleDateFormat("yyyyMMDD")
-  val dateToSqlFmt       = new java.text.SimpleDateFormat("yyyy-MM-dd")
+  val dateFromMessageFmt    = new java.text.SimpleDateFormat("yyyyMMDD")
+  val dateToSqlFmt          = new java.text.SimpleDateFormat("yyyy-MM-dd")
 
   override def saveTradableInstrument(
       oid: OrderbookId,
@@ -112,32 +111,34 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       underlyingSecName: String,
       maturityDate: Int,
       contractMultiplier: Int,
-      settlMethod: String
+      settlMethod: String,
+      marketTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
       sql <- EitherT.rightT[Task, AppError] {
         channel match {
-          case Channel.eq => s"""
-                                |INSERT INTO $tradableInstrumentTable
-                                |($cSecCode, $cSecName, $cSecType, $cSecDesc, $cAllowShortSell, $cAllowNVDR,
-                                |$cAllowShortSellOnNVDR, $cAllowTTF, $cIsValidForTrading,
-                                |$cIsOddLot, $cParValue, $cSectorNumber
-                                |) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-                                |ON DUPLICATE KEY UPDATE
-                                |$cSecName=?, $cSecType=?, $cSecDesc=?, $cAllowShortSell=?, $cAllowNVDR=?,
-                                |$cAllowShortSellOnNVDR=?, $cAllowTTF=?, $cIsValidForTrading=?,
-                                |$cIsOddLot=?, $cParValue=?, $cSectorNumber=?
-                                |""".stripMargin
+          case Channel.eq =>
+            s"""
+              |INSERT INTO $tradableInstrumentTable
+              |($cSecCode, $cSecName, $cSecType, $cSecDesc, $cAllowShortSell, $cAllowNVDR,
+              |$cAllowShortSellOnNVDR, $cAllowTTF, $cIsValidForTrading,
+              |$cIsOddLot, $cParValue, $cSectorNumber, $cTradeDate
+              |) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+              |ON DUPLICATE KEY UPDATE
+              |$cSecName=?, $cSecType=?, $cSecDesc=?, $cAllowShortSell=?, $cAllowNVDR=?,
+              |$cAllowShortSellOnNVDR=?, $cAllowTTF=?, $cIsValidForTrading=?,
+              |$cIsOddLot=?, $cParValue=?, $cSectorNumber=?, $cTradeDate=?
+              |""".stripMargin
           case Channel.fu =>
             s"""
-                                |INSERT INTO $tradableInstrumentTable
-                                |($cSecCode, $cSecName, $cSecType, $cSecDesc,
-                                |$cUnderlyingSecCode, $cUnderlyingSecName, $cMaturityDate, $cContractMultiplier, $cSettlMethod
-                                |) VALUES(?,?,?,?,?,?,?,?,?)
-                                |ON DUPLICATE KEY UPDATE
-                                |$cSecName=?, $cSecType=?, $cSecDesc=?, $cUnderlyingSecCode=?, $cUnderlyingSecName=?,
-                                |$cMaturityDate=?, $cContractMultiplier=?, $cSettlMethod=?
-                                |""".stripMargin
+              |INSERT INTO $tradableInstrumentTable
+              |($cSecCode, $cSecName, $cSecType, $cSecDesc,
+              |$cUnderlyingSecCode, $cUnderlyingSecName, $cMaturityDate, $cContractMultiplier, $cSettlMethod, $cTradeDate
+              |) VALUES(?,?,?,?,?,?,?,?,?,?)
+              |ON DUPLICATE KEY UPDATE
+              |$cSecName=?, $cSecType=?, $cSecDesc=?, $cUnderlyingSecCode=?, $cUnderlyingSecName=?,
+              |$cMaturityDate=?, $cContractMultiplier=?, $cSettlMethod=?, $cTradeDate=?
+              |""".stripMargin
         }
       }
       params <- EitherT.rightT[Task, AppError] {
@@ -159,6 +160,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               if (lotRoundSize == 1) "Y" else "N",
               parValue,
               sectorNumber,
+              microToSqlDateTime(marketTs),
               // Insert ends here, update startds here
               secName,
               secType,
@@ -170,7 +172,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               isValidForTrading.asInstanceOf[Char].toString,
               if (lotRoundSize == 1) "Y" else "N",
               parValue,
-              sectorNumber
+              sectorNumber,
+              microToSqlDateTime(marketTs)
             )
 
           case Channel.fu =>
@@ -186,6 +189,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               maturityDateSql,
               contractMultiplier,
               settlMethod,
+              microToSqlDateTime(marketTs),
               // Insert ends here, update starts here
               secName,
               secType,
@@ -194,7 +198,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               underlyingSecName,
               maturityDateSql,
               contractMultiplier,
-              settlMethod
+              settlMethod,
+              microToSqlDateTime(marketTs)
             )
         }
       }
@@ -225,11 +230,6 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           .getOrElse(Instrument("_NA_"))
       )
     } yield res).value
-
-  private def fromSqlDateToMicro(p: ArrayRowData, key: String): Micro =
-    Micro(
-      s"${p.getDate(key).atZone(zoneId).toInstant.toEpochMilli.toString}${(p.getDate(key).getNano % 1000000 / 1000).toString}".toLong
-    )
 
   override def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]] =
     (for {
@@ -591,6 +591,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   ): Task[Either[AppError, Unit]] = ???
 
   override def updateMarketStats(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       o: Qty,
@@ -609,15 +610,39 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
     (for {
       sql <- EitherT.rightT[Task, AppError](s"""
          |INSERT INTO $dayTable
-         |($cTradeDate, $cOpen1Price, $cOpen2Price, $cClose1Price, $cClose2Price, $cOpenPrice, $cClosePrice,
+         |($cTradeDate, $cSecCode, $cSecName, $cOpen1Price, $cOpen2Price, $cClose1Price, $cClose2Price,
          |$cSettlementPrice, $cHighPrice, $cLowPrice, $cVolume, $cBidAggressor, $cAskAggressor)
          |VALUES
          |(?,?,?,?,?,?,?,?,?,?,?,?,?)
          |""".stripMargin)
       params <- EitherT.rightT[Task, AppError] {
-        val tradeDate = tradeTs
-//        val
+        val tradeDate       = tradeTs
+        val secCode         = oid.value
+        val secName         = symbol.value
+        val openPx1         = 1
+        val openPx2         = 2
+        val closePx1        = 1
+        val closePx2        = 2
+        val settlementPrice = 1
+        val highPrice       = h.value
+        val lowPrice        = l.value
+        val volume          = tradedVol.value
+        val bidAggressor    = 1
+        val askAggressor    = 2
       }
+    } yield ()).value
+
+  override def updateMySqlIPOPrice(oid: OrderbookId, ipoPrice: Price): Task[Either[AppError, Unit]] =
+    (for {
+      sql <- EitherT.rightT[Task, AppError](s"""
+         |UPDATE $tradableInstrumentTable SET $cIPOPrice = ? WHERE $cSecCode = ?
+         |""".stripMargin)
+      params <- EitherT.rightT[Task, AppError](
+        Vector(ipoPrice.value, oid.value)
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
     } yield ()).value
 
   def createTables: Task[Either[AppError, Unit]] =
@@ -641,8 +666,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cIsValidForTrading varchar(1) NULL,
            |  $cIsOddLot varchar(1) NULL,
            |  $cParValue bigint NULL,
-           |  $cIPOPrice bigint NULL,
+           |  $cIPOPrice int NULL,
            |  $cSectorNumber varchar(20) NULL,
+           |  $cTradeDate datetime(6) NULL,
            |  PRIMARY KEY ($cSecCode)
            |);
            |""".stripMargin)
@@ -657,6 +683,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cMaturityDate datetime (6) NULL,
            |  $cContractMultiplier decimal(14, 6) NULL,
            |  $cSettlMethod varchar (20) NULL,
+           |  $cTradeDate datetime (6) NULL,
            |  PRIMARY KEY ($cSecCode)
            |);
            |""".stripMargin)
@@ -746,6 +773,29 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
              |));
              |""".stripMargin)
       }
+      day <- EitherT.rightT[Task, AppError](
+        Vector("Equity", "Derivative").map(p => s"""
+             |CREATE TABLE mdsdb.MDS_${p}Day(
+             |	$cTradeDate bigint NOT NULL,
+             |	$cSecCode int NOT NULL,
+             |	$cSecName varchar(20) NULL,
+             |	$cOpen1Price int NOT NULL,
+             |	$cOpen2Price int NOT NULL,
+             |	$cClose1Price int NULL,
+             |	$cClose2Price int NULL,
+             |	$cSettlementPrice int NULL,
+             |	$cHighPrice int NULL,
+             |  $cLowPrice int NULL,
+             |	$cVolume bigint NULL,
+             |	$cBidAggressor int NULL,
+             |	$cAskAggressor int NULL,
+             | CONSTRAINT PK_MDS_${p}Day PRIMARY KEY CLUSTERED
+             |(
+             |	$cTradeDate ASC,
+             |	$cSecCode ASC
+             |));
+             |""".stripMargin)
+      )
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(drop))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))))
@@ -760,6 +810,10 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.head))))
       _ <-
         EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.last))))
+      _ <-
+        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(day.head))))
+      _ <-
+        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(day.last))))
     } yield ()).value
 }
 
@@ -772,6 +826,11 @@ object MySQLImpl {
       .plusNanos(m.value % 1000 * 1000)
       .atZone(zoneId)
       .toLocalDateTime
+
+  private def fromSqlDateToMicro(p: ArrayRowData, key: String): Micro =
+    Micro(
+      s"${p.getDate(key).atZone(zoneId).toInstant.toEpochMilli.toString}${(p.getDate(key).getNano % 1000000 / 1000).toString}".toLong
+    )
 
   case class LastProjectedItem(projTime: Micro, seq: Long, secCode: Int, price: Price)
 }

@@ -227,6 +227,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
     "updateMarketStats" in {
       (for {
         _ <- store.updateMarketStats(
+          oid = oid,
           symbol = symbol,
           seq = seq,
           o = askQty1,

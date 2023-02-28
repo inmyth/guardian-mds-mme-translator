@@ -46,7 +46,8 @@ abstract class Store(channel: Channel) {
       underlyingSecName: String,
       maturityDate: Int,
       contractMultiplier: Int,
-      settlMethod: String
+      settlMethod: String,
+      marketTs: Micro
   ): Task[Either[AppError, Unit]]
   def getInstrument(orderbookId: OrderbookId): Task[Either[AppError, Instrument]]
 
@@ -144,6 +145,7 @@ abstract class Store(channel: Channel) {
   ): Task[Either[AppError, Unit]]
 
   def updateMarketStats(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       o: Qty,
@@ -158,6 +160,11 @@ abstract class Store(channel: Channel) {
       tradeTs: Long,
       marketTs: Micro,
       bananaTs: Micro
+  ): Task[Either[AppError, Unit]]
+
+  def updateMySqlIPOPrice(
+      oid: OrderbookId,
+      ipoPrice: Price
   ): Task[Either[AppError, Unit]]
 }
 
@@ -191,7 +198,8 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       underlyingSecName: String,
       maturityDate: Int,
       contractMultiplier: Int,
-      settlMethod: String
+      settlMethod: String,
+      marketTs: Micro
   ): Task[Either[AppError, Unit]] = {
     symbolReferenceDb = symbolReferenceDb + (oid -> symbol)
     ().asRight.pure[Task]
@@ -358,6 +366,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
   }
 
   override def updateMarketStats(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       o: Qty,
@@ -393,6 +402,11 @@ class InMemImpl(channel: Channel) extends Store(channel) {
     ) ++ list))
     ().asRight[AppError].pure[Task]
   }
+
+  override def updateMySqlIPOPrice(
+      oid: OrderbookId,
+      ipoPrice: Price
+  ): Task[Either[AppError, Unit]] = ().asRight.pure[Task] // UNUSED
 }
 
 object InMemImpl {

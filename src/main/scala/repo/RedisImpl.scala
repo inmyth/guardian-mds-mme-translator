@@ -60,23 +60,24 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
     } yield s).value
 
   override def saveTradableInstrument(
-                                       oid: OrderbookId,
-                                       symbol: Instrument,
-                                       secType: String,
-                                       secDesc: String,
-                                       allowShortSell: Byte,
-                                       allowNVDR: Byte,
-                                       allowShortSellOnNVDR: Byte,
-                                       allowTTF: Byte,
-                                       isValidForTrading: Byte,
-                                       lotRoundSize: Int,
-                                       parValue: Long,
-                                       sectorNumber: String,
-                                       underlyingSecCode: Int,
-                                       underlyingSecName: String,
-                                       maturityDate: Int,
-                                       contractMultiplier: Int,
-                                       settlMethod: String
+      oid: OrderbookId,
+      symbol: Instrument,
+      secType: String,
+      secDesc: String,
+      allowShortSell: Byte,
+      allowNVDR: Byte,
+      allowShortSellOnNVDR: Byte,
+      allowTTF: Byte,
+      isValidForTrading: Byte,
+      lotRoundSize: Int,
+      parValue: Long,
+      sectorNumber: String,
+      underlyingSecCode: Int,
+      underlyingSecName: String,
+      maturityDate: Int,
+      contractMultiplier: Int,
+      settlMethod: String,
+      marketTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
       _ <- EitherT.rightT[Task, AppError](commands.get.hset(keyTradableInstrument, oid.value.toString, symbol.value))
@@ -395,6 +396,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   private val change        = "change"
   private val changePercent = "changePercent"
   override def updateMarketStats(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       o: Qty,
@@ -431,4 +433,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
         )
       }
     } yield ()).value
+
+  override def updateMySqlIPOPrice(oid: OrderbookId, ipoPrice: Price): Task[Either[AppError, Unit]] =
+    ().asRight.pure[Task]
 }

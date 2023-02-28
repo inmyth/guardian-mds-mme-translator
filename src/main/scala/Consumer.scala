@@ -34,29 +34,35 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
             now <- Task.now(Micro(System.nanoTime() / 1000))
             msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
             res <- msg match {
-
               case a: SecondsMessage => store.saveSecond(a.getSeconds)
 
               case a: OrderBookDirectoryMessageSetImpl =>
-                store.saveTradableInstrument(
-                  OrderbookId(a.getOrderBookId),
-                  Instrument(a.getSymbol),
-                  secType = new String(a.getFinancialProduct), // both
-                  secDesc = new String(a.getLongName),         //
-                  allowShortSell = a.getAllowShortSell,
-                  allowNVDR = a.getAllowNvdr,
-                  allowShortSellOnNVDR = a.getAllowShortSellOnNvdr,
-                  allowTTF = a.getAllowTtf,
-                  isValidForTrading = a.getStatus,
-                  lotRoundSize = a.getRoundLotSize,
-                  parValue = a.getParValue,
-                  sectorNumber = new String(a.getSectorCode),
-                  underlyingSecCode = a.getUnderlying, // or underlyingOrderbookId
-                  underlyingSecName = new String(a.getUnderlyingName),
-                  maturityDate = a.getExpirationDate, // YYYYMMDD
-                  contractMultiplier = a.getContractSize,
-                  settlMethod = "NA"
-                )
+                (for {
+                  msc <- EitherT(store.getSecond)
+                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  _ <- EitherT(
+                    store.saveTradableInstrument(
+                      OrderbookId(a.getOrderBookId),
+                      Instrument(a.getSymbol),
+                      secType = new String(a.getFinancialProduct), // both
+                      secDesc = new String(a.getLongName),         //
+                      allowShortSell = a.getAllowShortSell,
+                      allowNVDR = a.getAllowNvdr,
+                      allowShortSellOnNVDR = a.getAllowShortSellOnNvdr,
+                      allowTTF = a.getAllowTtf,
+                      isValidForTrading = a.getStatus,
+                      lotRoundSize = a.getRoundLotSize,
+                      parValue = a.getParValue,
+                      sectorNumber = new String(a.getSectorCode),
+                      underlyingSecCode = a.getUnderlying, // or underlyingOrderbookId
+                      underlyingSecName = new String(a.getUnderlyingName),
+                      maturityDate = a.getExpirationDate, // YYYYMMDD
+                      contractMultiplier = a.getContractSize,
+                      settlMethod = "NA",
+                      marketTs = mms
+                    )
+                  )
+                } yield ()).value
 
               case a: MarketByPriceMessage =>
                 (for {
@@ -140,7 +146,6 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
-
                     store.updateKline(
                       symbol = symbol,
                       seq = seq,
@@ -159,11 +164,13 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: IndexPriceMessageSet =>
                 (for {
-                  symbol <- EitherT(store.getInstrument(OrderbookId(a.getOrderBookId)))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateMarketStats(
+                      oid = oid,
                       symbol = symbol,
                       seq = seq,
                       o = Qty(a.getOpenValue),
@@ -178,6 +185,17 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       tradeTs = a.getTimestamp,
                       marketTs = mms,
                       bananaTs = now
+                    )
+                  )
+                } yield ()).value
+
+              case a: ReferencePriceMessage =>
+                (for {
+                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  _ <- EitherT(
+                    store.updateMySqlIPOPrice(
+                      oid = oid,
+                      ipoPrice = Price(a.getPrice)
                     )
                   )
                 } yield ()).value

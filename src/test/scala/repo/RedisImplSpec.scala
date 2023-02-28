@@ -3,7 +3,7 @@ package repo
 
 import Config.RedisConfig
 import Fixtures._
-import entity.Qty
+import entity.{Micro, Qty}
 
 import io.lettuce.core.api.sync.RedisCommands
 import io.lettuce.core.{Limit, Range}
@@ -48,7 +48,8 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
             underlyingSecName = underlyingSecName,
             maturityDate = maturityDate,
             contractMultiplier = contractMultiplier,
-            settlMethod = settlMethod
+            settlMethod = settlMethod,
+            marketTs: Micro
           )
           symbol <- store.getInstrument(oid)
         } yield symbol).runToFuture.map(_ shouldBe Right(symbol))
@@ -228,6 +229,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           bananaTs = bananaTs
         )
         _ <- store.updateMarketStats(
+          oid = oid,
           symbol = symbol,
           seq = seq,
           o = askQty1,
