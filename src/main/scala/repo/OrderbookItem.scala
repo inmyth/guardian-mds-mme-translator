@@ -14,9 +14,9 @@ private[repo] case class OrderbookItem(
 
   def insert(price: Price, qty: Qty, sourceTs: Micro, level: Int, side: Side): Seq[Option[(Price, Qty, Micro)]] = {
     val index = level - 1
-    val current = side.value match {
-      case OrderbookItem.B => bids
-      case _               => asks
+    val current = side.value.asInstanceOf[Char] match {
+      case 'B' => bids
+      case _   => asks
     }
     val (front, back) = current.splitAt(index)
     val res           = front ++ Vector(Some(price, qty, sourceTs)) ++ back
@@ -25,30 +25,27 @@ private[repo] case class OrderbookItem(
 
   def delete(side: Side, level: Int, numDeletes: Int): Seq[Option[(Price, Qty, Micro)]] = {
     val index = level - 1
-    val current = side.value match {
-      case OrderbookItem.B => bids
-      case _               => asks
+    val current = side.value.asInstanceOf[Char] match {
+      case 'B' => bids
+      case _   => asks
     }
     val (first, rest) = current.splitAt(index)
     val (_, last)     = rest.splitAt(numDeletes)
-    val res           = first ++ last
+    val res = first ++ last
     res.dropRight(res.size - maxLevel)
   }
 
   def update(side: Side, level: Int, price: Price, qty: Qty, marketTs: Micro): Seq[Option[(Price, Qty, Micro)]] = {
     val index = level - 1
-    val current = side.value match {
-      case OrderbookItem.B => bids
-      case _               => asks
+    val current = side.value.asInstanceOf[Char] match {
+      case 'B' => bids
+      case _   => asks
     }
     current.updated(index, Some(price, qty, marketTs))
   }
 }
 
 object OrderbookItem {
-  val A: Byte = 65
-  val B: Byte = 66
-
   def reconstruct(
       list: Seq[Option[(Price, Qty, Micro)]],
       side: Byte,
@@ -58,9 +55,9 @@ object OrderbookItem {
       bananaTs: Micro,
       origin: OrderbookItem
   ): OrderbookItem = {
-    val temp = side match {
-      case B => origin.copy(bids = list)
-      case _ => origin.copy(asks = list)
+    val temp = side.asInstanceOf[Char] match {
+      case 'B' => origin.copy(bids = list)
+      case _   => origin.copy(asks = list)
     }
     temp.copy(seq = seq, maxLevel = maxLevel, marketTs = marketTs, bananaTs = bananaTs)
   }

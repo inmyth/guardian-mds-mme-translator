@@ -270,11 +270,11 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
             this.id              -> seq.toString,
             this.p               -> p.value.toString,
             this.q               -> q.value.toString,
-            this.s               -> (aggressor & 0xff).asInstanceOf[Char].toString,
+            this.s               -> aggressor.asInstanceOf[Char].toString,
             this.tq              -> tq.value.toString,
-            this.action          -> (action & 0xff).asInstanceOf[Char].toString,
+            this.action          -> action.asInstanceOf[Char].toString,
             this.tradeReportCode -> tradeReportCode.toString,
-            this.dealSource      -> (dealSource & 0xff).asInstanceOf[Char].toString,
+            this.dealSource      -> dealSource.asInstanceOf[Char].toString,
             this.tss             -> marketTs.value.toString,
             this.tsb             -> bananaTs.value.toString
           ).asJava

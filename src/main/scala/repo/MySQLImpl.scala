@@ -152,11 +152,11 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               secName,
               secType,
               secDesc,
-              (allowShortSell & 0xFF).asInstanceOf[Char].toString,
-              (allowNVDR & 0xFF).asInstanceOf[Char].toString,
-              (allowShortSellOnNVDR & 0xFF).asInstanceOf[Char].toString,
-              (allowTTF & 0xFF).asInstanceOf[Char].toString,
-              (isValidForTrading & 0xFF).asInstanceOf[Char].toString,
+              allowShortSell.asInstanceOf[Char].toString,
+              allowNVDR.asInstanceOf[Char].toString,
+              allowShortSellOnNVDR.asInstanceOf[Char].toString,
+              allowTTF.asInstanceOf[Char].toString,
+              isValidForTrading.asInstanceOf[Char].toString,
               if (lotRoundSize == 1) "Y" else "N",
               parValue,
               sectorNumber,
@@ -165,11 +165,11 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               secName,
               secType,
               secDesc,
-              (allowShortSell & 0xFF).asInstanceOf[Char].toString,
-              (allowNVDR & 0xFF).asInstanceOf[Char].toString,
-              (allowShortSellOnNVDR & 0xFF).asInstanceOf[Char].toString,
-              (allowTTF & 0xFF).asInstanceOf[Char].toString,
-              (isValidForTrading & 0xFF).asInstanceOf[Char].toString,
+              allowShortSell.asInstanceOf[Char].toString,
+              allowNVDR.asInstanceOf[Char].toString,
+              allowShortSellOnNVDR.asInstanceOf[Char].toString,
+              allowTTF.asInstanceOf[Char].toString,
+              isValidForTrading.asInstanceOf[Char].toString,
               if (lotRoundSize == 1) "Y" else "N",
               parValue,
               sectorNumber,
@@ -401,9 +401,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         val secCode       = oid.value
         val lastPrice     = p.value
         val volume        = q.value
-        val (bidAggressor, askAggressor): (Byte, Byte) = aggressor match {
-          case OrderbookItem.B => (1, 0)
-          case OrderbookItem.A => (0, 1)
+        val (bidAggressor, askAggressor): (Byte, Byte) = aggressor.asInstanceOf[Char] match {
+          case 'B' => (1, 0)
+          case 'A' => (0, 1)
           case _   => (0, 0)
         }
         val isTradeReport: Byte = if (dealSource == 3) 1 else 0
