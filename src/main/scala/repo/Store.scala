@@ -61,7 +61,7 @@ abstract class Store(channel: Channel) {
         else {
           EitherT.rightT[Task, AppError](OrderbookItem.empty(item.maxLevel))
         }
-      nuPriceLevels <- EitherT.rightT[Task, AppError](item.levelUpdateAction.asInstanceOf[Char] match {
+      nuPriceLevels <- EitherT.rightT[Task, AppError](item.levelUpdateAction match {
         case 'N' => lastItem.insert(item.price, item.qty, item.marketTs, item.level, item.side)
         case 'D' => lastItem.delete(side = item.side, level = item.level, numDeletes = item.numDeletes)
         case _ =>

@@ -14,7 +14,7 @@ private[repo] case class OrderbookItem(
 
   def insert(price: Price, qty: Qty, sourceTs: Micro, level: Int, side: Side): Seq[Option[(Price, Qty, Micro)]] = {
     val index = level - 1
-    val current = side.value.asInstanceOf[Char] match {
+    val current = side.value.toChar match {
       case 'B' => bids
       case _   => asks
     }
@@ -25,19 +25,19 @@ private[repo] case class OrderbookItem(
 
   def delete(side: Side, level: Int, numDeletes: Int): Seq[Option[(Price, Qty, Micro)]] = {
     val index = level - 1
-    val current = side.value.asInstanceOf[Char] match {
+    val current = side.value.toChar match {
       case 'B' => bids
       case _   => asks
     }
     val (first, rest) = current.splitAt(index)
     val (_, last)     = rest.splitAt(numDeletes)
-    val res = first ++ last
+    val res           = first ++ last
     res.dropRight(res.size - maxLevel)
   }
 
   def update(side: Side, level: Int, price: Price, qty: Qty, marketTs: Micro): Seq[Option[(Price, Qty, Micro)]] = {
     val index = level - 1
-    val current = side.value.asInstanceOf[Char] match {
+    val current = side.value.toChar match {
       case 'B' => bids
       case _   => asks
     }
@@ -55,7 +55,7 @@ object OrderbookItem {
       bananaTs: Micro,
       origin: OrderbookItem
   ): OrderbookItem = {
-    val temp = side.asInstanceOf[Char] match {
+    val temp = side.toChar match {
       case 'B' => origin.copy(bids = list)
       case _   => origin.copy(asks = list)
     }

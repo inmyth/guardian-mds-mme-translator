@@ -152,11 +152,11 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               secName,
               secType,
               secDesc,
-              allowShortSell.asInstanceOf[Char].toString,
-              allowNVDR.asInstanceOf[Char].toString,
-              allowShortSellOnNVDR.asInstanceOf[Char].toString,
-              allowTTF.asInstanceOf[Char].toString,
-              isValidForTrading.asInstanceOf[Char].toString,
+              allowShortSell.toChar.toString,
+              allowNVDR.toChar.toString,
+              allowShortSellOnNVDR.toChar.toString,
+              allowTTF.toChar.toString,
+              isValidForTrading.toChar.toString,
               if (lotRoundSize == 1) "Y" else "N",
               parValue,
               sectorNumber,
@@ -165,11 +165,11 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               secName,
               secType,
               secDesc,
-              allowShortSell.asInstanceOf[Char].toString,
-              allowNVDR.asInstanceOf[Char].toString,
-              allowShortSellOnNVDR.asInstanceOf[Char].toString,
-              allowTTF.asInstanceOf[Char].toString,
-              isValidForTrading.asInstanceOf[Char].toString,
+              allowShortSell.toChar.toString,
+              allowNVDR.toChar.toString,
+              allowShortSellOnNVDR.toChar.toString,
+              allowTTF.toChar.toString,
+              isValidForTrading.toChar.toString,
               if (lotRoundSize == 1) "Y" else "N",
               parValue,
               sectorNumber,
@@ -401,7 +401,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         val secCode       = oid.value
         val lastPrice     = p.value
         val volume        = q.value
-        val (bidAggressor, askAggressor): (Byte, Byte) = aggressor.asInstanceOf[Char] match {
+        val (bidAggressor, askAggressor): (Byte, Byte) = aggressor.toChar match {
           case 'B' => (1, 0)
           case 'A' => (0, 1)
           case _   => (0, 0)
