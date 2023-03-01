@@ -20,7 +20,8 @@ abstract class Store(channel: Channel) {
   val keyProjected: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
   val keyKlein: Instrument => String       = (symbol: Instrument) => s"${channel.toString}:klein:${symbol.value}"
   val keyMarketStats: Instrument => String = (symbol: Instrument) => s"id:mkt:${symbol.value}"
-
+  val N: Byte                              = 78
+  val D: Byte                              = 68
   def connect: Task[Either[AppError, Unit]]
 
   def disconnect: Task[Either[AppError, Unit]]
@@ -61,9 +62,9 @@ abstract class Store(channel: Channel) {
         else {
           EitherT.rightT[Task, AppError](OrderbookItem.empty(item.maxLevel))
         }
-      nuPriceLevels <- EitherT.rightT[Task, AppError](item.levelUpdateAction.asInstanceOf[Char] match {
-        case 'N' => lastItem.insert(item.price, item.qty, item.marketTs, item.level, item.side)
-        case 'D' => lastItem.delete(side = item.side, level = item.level, numDeletes = item.numDeletes)
+      nuPriceLevels <- EitherT.rightT[Task, AppError](item.levelUpdateAction match {
+        case N => lastItem.insert(item.price, item.qty, item.marketTs, item.level, item.side)
+        case D => lastItem.delete(side = item.side, level = item.level, numDeletes = item.numDeletes)
         case _ =>
           lastItem
             .update(side = item.side, level = item.level, price = item.price, qty = item.qty, marketTs = item.marketTs)
