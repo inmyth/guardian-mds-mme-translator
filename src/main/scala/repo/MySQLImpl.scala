@@ -9,10 +9,11 @@ import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
 import com.github.jasync.sql.db.Connection
 import com.github.jasync.sql.db.general.ArrayRowData
+import com.guardian.repo.MySQLImpl.localDateToMySqlDate
 import monix.eval.Task
 
 import java.lang
-import java.time.{Instant, LocalDateTime, ZoneId}
+import java.time.{Instant, LocalDate, LocalDateTime, LocalTime, ZoneId}
 
 import scala.jdk.CollectionConverters._
 import scala.jdk.javaapi.FutureConverters
@@ -20,6 +21,8 @@ import scala.jdk.javaapi.FutureConverters
 class MySQLImpl(channel: Channel, val connection: Connection) extends Store(channel) {
   import MySQLImpl._
   private var marketSecondDb: Option[Int] = None
+  private val t1230                       = LocalTime.parse("12:30")
+  private val t1630                       = LocalTime.parse("16:30")
 
   val (maxLevel, orderbookTable, tickerTable, dayTable, projectedTable, tradableInstrumentTable) = {
     val (ml, which) = channel match {
@@ -577,6 +580,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
     } yield ()).value
 
   override def updateKline(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       o: Price,
@@ -588,7 +592,194 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       turnOverQty: Qty,
       marketTs: Micro,
       bananaTs: Micro
-  ): Task[Either[AppError, Unit]] = ???
+  ): Task[Either[AppError, Unit]] =
+    channel match {
+      case Channel.eq =>
+        updateEquityDay(
+          oid = oid,
+          symbol = symbol,
+          o = o,
+          h = h,
+          l = l,
+          c = c,
+          turnOverQty = turnOverQty,
+          marketTs = marketTs
+        )
+      case Channel.fu => ().asRight.pure[Task]
+    }
+
+  override def updateMySqlSettlementPrice(
+      oid: OrderbookId,
+      marketTs: Micro,
+      settlPrice: Price
+  ): Task[Either[AppError, Unit]] =
+    (for {
+      marketDt <- EitherT.rightT[Task, AppError](microToSqlDateTime(marketTs))
+      day      <- EitherT.rightT[Task, AppError](localDateToMySqlDate(marketDt.toLocalDate))
+      sql      <- EitherT.rightT[Task, AppError](s"""
+           |SELECT $cTradeDate FROM $dayTable WHERE $cTradeDate
+           |LIKE "${day.toString}%" AND $cSecCode = ${oid.value}
+           |""".stripMargin)
+      res <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql)))
+      )
+      id <- EitherT.rightT[Task, AppError](
+        res.getRows
+          .stream()
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => {
+            p.getDate(cTradeDate)
+          })
+          .headOption
+      )
+      _ <- id match {
+        case Some(value) =>
+          for {
+            s <- EitherT.rightT[Task, AppError](
+              s"""
+                 |UPDATE $dayTable SET $cSettlementPrice = ? WHERE $cTradeDate = ?
+                 |""".stripMargin
+            )
+            p <- EitherT.rightT[Task, AppError](
+              Vector(
+                settlPrice.value,
+                value
+              )
+            )
+            _ <- EitherT.right[AppError](
+              Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(s, p.asJava)))
+            )
+          } yield ()
+
+        case None => EitherT.rightT[Task, AppError](())
+      }
+    } yield ()).value
+
+  def getEquityDayOf(day: java.sql.Date): Task[Either[AppError, Option[EquityDayItem]]] =
+    (for {
+      pastSql <- EitherT.rightT[Task, AppError](s"""
+         |SELECT * FROM $dayTable WHERE $cTradeDate
+         |LIKE "${day.toString}%"
+         |""".stripMargin)
+      raw <-
+        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(pastSql))))
+      past <- EitherT.rightT[Task, AppError](
+        raw.getRows
+          .stream()
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => {
+            EquityDayItem(
+              dateTime = p.getDate(cTradeDate),
+              openPrice1 = Option(p.getInt(cOpen1Price)).map(Price(_)),
+              openPrice2 = Option(p.getInt(cOpen2Price)).map(Price(_)),
+              closePrice1 = Option(p.getInt(cClose1Price)).map(Price(_)),
+              closePrice2 = Option(p.getInt(cClose2Price)).map(Price(_)),
+              h = Option(p.getInt(cHighPrice)).map(Price(_)),
+              l = Option(p.getInt(cLowPrice)).map(Price(_)),
+              vol = Option(p.getLong(cVolume)).map(Qty(_)),
+              settlPrice = Option(p.getInt(cSettlementPrice)).map(Price(_))
+            )
+          })
+          .headOption
+      )
+    } yield past).value
+
+  def updateEquityDay(
+      oid: OrderbookId,
+      symbol: Instrument,
+      o: Price,
+      h: Price,
+      l: Price,
+      c: Price,
+      turnOverQty: Qty,
+      marketTs: Micro
+  ): Task[Either[AppError, Unit]] =
+    (for {
+      marketDt <- EitherT.rightT[Task, AppError](microToSqlDateTime(marketTs))
+      today    <- EitherT.rightT[Task, AppError](localDateToMySqlDate(marketDt.toLocalDate))
+      past     <- EitherT(getEquityDayOf(today))
+      item <- EitherT.rightT[Task, AppError] {
+        if (past.isEmpty) {
+          EquityDayItem(
+            dateTime = marketDt,
+            openPrice1 = Some(o),
+            openPrice2 = None,
+            closePrice1 = None,
+            closePrice2 = None
+          )
+        }
+        else {
+          val p         = past.get
+          val today1230 = marketDt.`with`(t1230)
+          val today1630 = marketDt.`with`(t1630)
+          if (p.dateTime.isBefore(today1230)) {
+            if (marketDt.isAfter(today1230) && p.closePrice1.isEmpty && p.openPrice2.isEmpty) {
+              p.copy(closePrice1 = Some(c), openPrice2 = Some(o))
+            }
+            else {
+              p
+            }
+          }
+          else if (p.dateTime.isBefore(today1630)) {
+            if (marketDt.isAfter(today1630) && p.closePrice2.isEmpty) {
+              p.copy(closePrice2 = Some(c))
+            }
+            else {
+              p
+            }
+          }
+          else {
+            p
+          }
+        }
+      }
+      sql <- EitherT.rightT[Task, AppError] {
+        if (past.isEmpty) {
+          val s = s"""
+             |INSERT INTO $dayTable ($cTradeDate, $cSecCode, $cSecName, $cOpen1Price,
+             |$cOpenPrice, $cClosePrice, $cHighPrice, $cLowPrice, $cVolume)
+             |VALUES(?,?,?,?,?,?,?,?,?)
+             |""".stripMargin
+          val p = Vector(
+            marketDt,
+            oid.value,
+            symbol.value,
+            o.value,
+            o.value,
+            c.value,
+            h.value,
+            l.value,
+            turnOverQty.value
+          )
+          (s, p)
+        }
+        else {
+          val s = s"""
+             |UPDATE $dayTable SET $cTradeDate = ?,
+             |${item.openPrice2.map(p => s"$cOpen2Price = ${p.value},").getOrElse("")}
+             |${item.closePrice1.map(p => s"$cClose1Price = ${p.value},").getOrElse("")}
+             |${item.closePrice2.map(p => s"$cClose2Price = ${p.value},").getOrElse("")}
+             |$cOpenPrice = ?, $cClosePrice = ?, $cHighPrice = ?, $cLowPrice = ?, $cVolume = ?
+             |WHERE $cTradeDate = ?
+             |""".stripMargin
+          val p = Vector(
+            marketDt,
+            o.value,
+            c.value,
+            h.value,
+            l.value,
+            turnOverQty.value,
+            item.dateTime
+          )
+          (s, p)
+        }
+      }
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql._1, sql._2.asJava)))
+      )
+    } yield ()).value
 
   override def updateMarketStats(
       oid: OrderbookId,
@@ -773,35 +964,35 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
              |));
              |""".stripMargin)
       }
-      day <- EitherT.rightT[Task, AppError](
-        Vector("Equity", "Derivative").map(p => s"""
-             |CREATE TABLE mdsdb.MDS_${p}Day(
-             |	$cTradeDate bigint NOT NULL,
+      eda <- EitherT.rightT[Task, AppError](s"""
+             |CREATE TABLE mdsdb.MDS_EquityDay(
+             |	$cTradeDate datetime(6) NOT NULL,
              |	$cSecCode int NOT NULL,
              |	$cSecName varchar(20) NULL,
-             |	$cOpen1Price int NOT NULL,
-             |	$cOpen2Price int NOT NULL,
+             |	$cOpen1Price int NULL,
+             |	$cOpen2Price int NULL,
              |	$cClose1Price int NULL,
              |	$cClose2Price int NULL,
+             |  $cOpenPrice int NULL,
+             |  $cClosePrice int NULL,
              |	$cSettlementPrice int NULL,
              |	$cHighPrice int NULL,
              |  $cLowPrice int NULL,
              |	$cVolume bigint NULL,
              |	$cBidAggressor int NULL,
              |	$cAskAggressor int NULL,
-             | CONSTRAINT PK_MDS_${p}Day PRIMARY KEY CLUSTERED
+             | CONSTRAINT PK_MDS_EquityDay PRIMARY KEY CLUSTERED
              |(
              |	$cTradeDate ASC,
              |	$cSecCode ASC
              |));
              |""".stripMargin)
-      )
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(drop))))
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))))
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))))
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dti))))
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eob))))
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dob))))
+      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(drop))))
+      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))))
+      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))))
+      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dti))))
+      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eob))))
+      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dob))))
       _ <-
         EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.head))))
       _ <-
@@ -810,27 +1001,39 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.head))))
       _ <-
         EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.last))))
-      _ <-
-        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(day.head))))
-      _ <-
-        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(day.last))))
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eda))))
     } yield ()).value
 }
 
 object MySQLImpl {
-  private val zoneId: ZoneId = ZoneId.of("Asia/Bangkok")
+  val zoneId: ZoneId = ZoneId.of("Asia/Bangkok")
 
-  private def microToSqlDateTime(m: Micro): LocalDateTime =
+  def localDateToMySqlDate(l: LocalDate) = java.sql.Date.valueOf(l)
+  def microToSqlDateTime(m: Micro): LocalDateTime =
     Instant
       .ofEpochMilli(m.value / 1000)
       .plusNanos(m.value % 1000 * 1000)
       .atZone(zoneId)
       .toLocalDateTime
 
-  private def fromSqlDateToMicro(p: ArrayRowData, key: String): Micro =
+  def fromSqlDateToMicro(p: ArrayRowData, key: String): Micro =
     Micro(
       s"${p.getDate(key).atZone(zoneId).toInstant.toEpochMilli.toString}${(p.getDate(key).getNano % 1000000 / 1000).toString}".toLong
     )
 
   case class LastProjectedItem(projTime: Micro, seq: Long, secCode: Int, price: Price)
+
+  case class EquityDayItem(
+      dateTime: LocalDateTime,
+      openPrice1: Option[Price],
+      openPrice2: Option[Price],
+      closePrice1: Option[Price],
+      closePrice2: Option[Price],
+      h: Option[Price] = None,
+      l: Option[Price] = None,
+      settlPrice: Option[Price] = None,
+      vol: Option[Qty] = None,
+      aggressorBid: Option[Boolean] = None,
+      aggressorAsk: Option[Boolean] = None
+  )
 }

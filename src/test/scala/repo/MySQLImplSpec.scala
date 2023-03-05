@@ -6,6 +6,7 @@ import Fixtures._
 import entity.{Micro, OrderbookId, Price, Qty, Side}
 
 import com.github.jasync.sql.db.general.ArrayRowData
+import MySQLImpl.{microToSqlDateTime, _}
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.matchers.should.Matchers
@@ -15,6 +16,7 @@ import java.lang
 
 import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.jdk.javaapi.FutureConverters
+import java.time.{LocalDateTime, ZoneOffset}
 
 class MySQLImplSpec extends AsyncWordSpec with Matchers {
   import MySQLImplSpec._
@@ -363,6 +365,188 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
           } yield res).runToFuture.map(_ shouldBe Price(100))
         }
       }
+      "updateMarketStats (updateEquityDay)" should {
+        "create a new item with open price 1" when {
+          "last item is empty" in {
+            (for {
+              _ <- store.updateEquityDay(
+                oid = oid,
+                symbol = symbol,
+                o = openPrice1,
+                c = askPrice2,
+                h = askPrice3,
+                l = askPrice4,
+                turnOverQty = askQty1,
+                marketTs = marketTs
+              )
+              res <- store.getEquityDayOf(localDateToMySqlDate(microToSqlDateTime(marketTs).toLocalDate))
+            } yield res).runToFuture.map(
+              _ shouldBe Right(
+                Some(
+                  EquityDayItem(
+                    dateTime = microToSqlDateTime(marketTs),
+                    openPrice1 = Some(openPrice1),
+                    openPrice2 = None,
+                    closePrice1 = None,
+                    closePrice2 = None,
+                    vol = Some(askQty1),
+                    h = Some(askPrice3),
+                    l = Some(askPrice4)
+                  )
+                )
+              )
+            )
+          }
+        }
+        "update only trade date and some other data when new item is before 12:30" in {
+          val date = microToSqlDateTime(t1225)
+          (for {
+            _ <- store.updateEquityDay(
+              oid = oid,
+              symbol = symbol,
+              o = askPrice5,
+              c = askPrice6,
+              h = askPrice7,
+              l = askPrice8,
+              turnOverQty = askQty2,
+              marketTs = t1225
+            )
+            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate))
+          } yield res).runToFuture.map(
+            _ shouldBe Right(
+              Some(
+                EquityDayItem(
+                  dateTime = microToSqlDateTime(t1225),
+                  openPrice1 = Some(openPrice1),
+                  openPrice2 = None,
+                  closePrice1 = None,
+                  closePrice2 = None,
+                  vol = Some(askQty2),
+                  h = Some(askPrice7),
+                  l = Some(askPrice8)
+                )
+              )
+            )
+          )
+        }
+        "update close price 1 and open price 2 when new item is after 12:30 and current item is before 12:30" in {
+          val date = microToSqlDateTime(t1235)
+          (for {
+            _ <- store.updateEquityDay(
+              oid = oid,
+              symbol = symbol,
+              o = openPrice2,
+              c = closePrice1,
+              h = bidPrice3,
+              l = bidPrice4,
+              turnOverQty = bidQty1,
+              marketTs = t1235
+            )
+            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate))
+          } yield res).runToFuture.map(
+            _ shouldBe Right(
+              Some(
+                EquityDayItem(
+                  dateTime = microToSqlDateTime(t1235),
+                  openPrice1 = Some(openPrice1),
+                  openPrice2 = Some(openPrice2),
+                  closePrice1 = Some(closePrice1),
+                  closePrice2 = None,
+                  vol = Some(bidQty1),
+                  h = Some(bidPrice3),
+                  l = Some(bidPrice4)
+                )
+              )
+            )
+          )
+        }
+        "update only trade date and some other data when new item is between 12:30 and 16:30" in {
+          val date = microToSqlDateTime(t1625)
+          (for {
+            _ <- store.updateEquityDay(
+              oid = oid,
+              symbol = symbol,
+              o = bidPrice5,
+              c = bidPrice6,
+              h = bidPrice7,
+              l = bidPrice8,
+              turnOverQty = bidQty2,
+              marketTs = t1625
+            )
+            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate))
+          } yield res).runToFuture.map(
+            _ shouldBe Right(
+              Some(
+                EquityDayItem(
+                  dateTime = microToSqlDateTime(t1625),
+                  openPrice1 = Some(openPrice1),
+                  openPrice2 = Some(openPrice2),
+                  closePrice1 = Some(closePrice1),
+                  closePrice2 = None,
+                  vol = Some(bidQty2),
+                  h = Some(bidPrice7),
+                  l = Some(bidPrice8)
+                )
+              )
+            )
+          )
+        }
+        "update close price 2 if new item is after 16:30 and current item is before 16:30" in {
+          val date = microToSqlDateTime(t1635)
+          (for {
+            _ <- store.updateEquityDay(
+              oid = oid,
+              symbol = symbol,
+              o = openPrice2,
+              c = closePrice2,
+              h = bidPrice9,
+              l = bidPrice10,
+              turnOverQty = bidQty2,
+              marketTs = t1635
+            )
+            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate))
+          } yield res).runToFuture.map(
+            _ shouldBe Right(
+              Some(
+                EquityDayItem(
+                  dateTime = microToSqlDateTime(t1635),
+                  openPrice1 = Some(openPrice1),
+                  openPrice2 = Some(openPrice2),
+                  closePrice1 = Some(closePrice1),
+                  closePrice2 = Some(closePrice2),
+                  vol = Some(bidQty2),
+                  h = Some(bidPrice9),
+                  l = Some(bidPrice10)
+                )
+              )
+            )
+          )
+        }
+      }
+      "updateMySqlSettlementPrice" should {
+        "update settlement price in EquityDay table" in {
+          (for {
+            _   <- store.updateMySqlSettlementPrice(oid, t1635, settlPrice)
+            res <- store.getEquityDayOf(localDateToMySqlDate(microToSqlDateTime(t1635).toLocalDate))
+          } yield res).runToFuture.map(
+            _ shouldBe Right(
+              Some(
+                EquityDayItem(
+                  dateTime = microToSqlDateTime(t1635),
+                  openPrice1 = Some(openPrice1),
+                  openPrice2 = Some(openPrice2),
+                  closePrice1 = Some(closePrice1),
+                  closePrice2 = Some(closePrice2),
+                  vol = Some(bidQty2),
+                  h = Some(bidPrice9),
+                  l = Some(bidPrice10),
+                  settlPrice = Some(settlPrice)
+                )
+              )
+            )
+          )
+        }
+      }
     }
 
     "fu" when {
@@ -589,6 +773,11 @@ object MySQLImplSpec {
   val mysqlConfig: MySqlConfig = MySqlConfig("localhost", 3306, None)
   val storeEq: MySQLImpl       = Store.mysql(channel, mysqlConfig).asInstanceOf[MySQLImpl]
   val storeFu: MySQLImpl       = Store.mysql(Channel.fu, mysqlConfig).asInstanceOf[MySQLImpl]
+
+  val openPrice1: Price  = Price(100)
+  val closePrice1: Price = Price(110)
+  val openPrice2: Price  = Price(120)
+  val closePrice2: Price = Price(130)
 
   def getIPOPrice(store: MySQLImpl, oid: OrderbookId): Task[Price] =
     for {

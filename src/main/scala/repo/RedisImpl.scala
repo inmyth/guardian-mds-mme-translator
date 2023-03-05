@@ -358,6 +358,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   val turnOverQty   = "val"
 
   override def updateKline(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       o: Price,
@@ -436,4 +437,11 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
 
   override def updateMySqlIPOPrice(oid: OrderbookId, ipoPrice: Price): Task[Either[AppError, Unit]] =
     ().asRight.pure[Task]
+
+  override def updateMySqlSettlementPrice(
+      oid: OrderbookId,
+      marketTs: Micro,
+      settlPrice: Price
+  ): Task[Either[AppError, Unit]] =
+    ().asRight.pure[Task] // UNUSED
 }

@@ -131,6 +131,7 @@ abstract class Store(channel: Channel) {
   ): Task[Either[AppError, Unit]]
 
   def updateKline(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       o: Price,
@@ -166,6 +167,13 @@ abstract class Store(channel: Channel) {
       oid: OrderbookId,
       ipoPrice: Price
   ): Task[Either[AppError, Unit]]
+
+  def updateMySqlSettlementPrice(
+      oid: OrderbookId,
+      marketTs: Micro,
+      settlPrice: Price
+  ): Task[Either[AppError, Unit]]
+
 }
 
 class InMemImpl(channel: Channel) extends Store(channel) {
@@ -335,6 +343,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
   }
 
   override def updateKline(
+      oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
       o: Price,
@@ -407,6 +416,13 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       oid: OrderbookId,
       ipoPrice: Price
   ): Task[Either[AppError, Unit]] = ().asRight.pure[Task] // UNUSED
+
+  override def updateMySqlSettlementPrice(
+      oid: OrderbookId,
+      marketTs: Micro,
+      settlPrice: Price
+  ): Task[Either[AppError, Unit]] =
+    ().asRight.pure[Task] // UNUSED
 }
 
 object InMemImpl {

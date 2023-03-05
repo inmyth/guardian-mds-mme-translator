@@ -142,11 +142,13 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: TradeStatisticsMessageSet =>
                 (for {
-                  symbol <- EitherT(store.getInstrument(OrderbookId(a.getOrderBookId)))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateKline(
+                      oid = oid,
                       symbol = symbol,
                       seq = seq,
                       o = Price(a.getOpenPrice),
@@ -191,6 +193,8 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: ReferencePriceMessage =>
                 (for {
+                  msc <- EitherT(store.getSecond)
+                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   _ <- EitherT(
                     store.updateMySqlIPOPrice(
@@ -198,6 +202,13 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       ipoPrice = Price(a.getPrice)
                     )
                   )
+                  _ <- a.getPriceType match {
+                    case 5 =>
+                      EitherT(
+                        store.updateMySqlSettlementPrice(oid = oid, marketTs = mms, settlPrice = Price(a.getPrice))
+                      )
+                    case _ => EitherT.rightT[Task, AppError](())
+                  }
                 } yield ()).value
 
               case _ => ().asRight.pure[Task]

@@ -101,8 +101,8 @@ object Fixtures {
   val second: Int                = 1677238290
   val dealDateTime: Long         = 1675763719L
   val tradeTs: Long              = 1675763719123L
-  val marketTs: Micro            = Micro(1675769709_123456L)
-  val bananaTs: Micro            = Micro(1675769709_123456L)
+  val marketTs: Micro            = Micro(1675735830_123456L) // Tuesday, February 7, 2023 9:10:30 AM
+  val bananaTs: Micro            = Micro(1675735840_123456L)
   val change                     = 100000L
   val changePercent              = 33
   val secType                    = "equity"
@@ -120,6 +120,12 @@ object Fixtures {
   val maturityDate               = 20220314
   val contractMultiplier         = 3
   val settlMethod                = "NA"
+  val settlPrice: Price          = Price(1200)
+
+  val t1225: Micro = Micro(1675747530_123456L)
+  val t1235: Micro = Micro(1675748130_123456L)
+  val t1625: Micro = Micro(1675761930_123456L)
+  val t1635: Micro = Micro(1675762530_123456L)
 
   val action: FlatPriceLevelAction = FlatPriceLevelAction(
     oid = oid,

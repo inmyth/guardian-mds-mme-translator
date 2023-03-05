@@ -190,6 +190,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
     "updateKline" in {
       (for {
         _ <- store.updateKline(
+          oid = oid,
           symbol = symbol,
           seq = seq,
           o = askPrice1,

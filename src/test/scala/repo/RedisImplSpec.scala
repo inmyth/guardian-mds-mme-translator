@@ -216,6 +216,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           bananaTs = bananaTs
         )
         _ <- store.updateKline(
+          oid = oid,
           symbol = symbol,
           seq = seq,
           o = askPrice1,
