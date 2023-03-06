@@ -3,7 +3,7 @@ package repo
 
 import AppError.{RedisConnectionError, SecondNotFound, SymbolNotFound}
 import Config.Channel
-import entity.{Instrument, Micro, OrderbookId, Price, Qty}
+import entity.{Instrument, Micro, OrderbookId, Price, Price8, Qty}
 
 import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
@@ -400,14 +400,14 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
       oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
-      o: Qty,
-      h: Qty,
-      l: Qty,
-      c: Qty,
-      previousClose: Qty,
+      o: Price8,
+      h: Price8,
+      l: Price8,
+      c: Price8,
+      previousClose: Price8,
       tradedVol: Qty,
-      tradedValue: Qty,
-      change: Long,
+      tradedValue: Price8,
+      change: Price8,
       changePercent: Int,
       tradeTs: Long,
       marketTs: Micro,

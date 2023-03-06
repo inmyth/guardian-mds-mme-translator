@@ -3,7 +3,7 @@ package repo
 
 import Config.{Channel, MySqlConfig}
 import Fixtures._
-import entity.{Micro, OrderbookId, Price, Qty, Side}
+import entity.{Micro, OrderbookId, Price, Price8, Qty, Side}
 
 import com.github.jasync.sql.db.general.ArrayRowData
 import MySQLImpl.{microToSqlDateTime, _}
@@ -17,6 +17,8 @@ import java.lang
 import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.jdk.javaapi.FutureConverters
 import java.time.{LocalDateTime, ZoneOffset}
+
+import scala.util.Random
 
 class MySQLImplSpec extends AsyncWordSpec with Matchers {
   import MySQLImplSpec._
@@ -365,7 +367,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
           } yield res).runToFuture.map(_ shouldBe Price(100))
         }
       }
-      "updateMarketStats (updateEquityDay)" should {
+      "updateKline (updateEquityDay)" should {
         "create a new item with open price 1" when {
           "last item is empty" in {
             (for {
@@ -545,6 +547,55 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               )
             )
           )
+        }
+      }
+      "updateMarketStats (updateIndexDay and updateIndexTicker)" should {
+        "update index day once a day, update index ticker" in {
+          (for {
+            _ <- store.updateMarketStats(
+              oid = oid,
+              symbol = symbol,
+              seq = seq,
+              o = openPriceA,
+              c = closePriceA,
+              h = highPriceA,
+              l = lowPriceA,
+              previousClose = prevCloseA,
+              tradedVol = tradedVolA,
+              tradedValue = tradedValA,
+              change = changeA,
+              changePercent = 20,
+              tradeTs = tradeTs,
+              marketTs = marketTs,
+              bananaTs = bananaTs
+            )
+            res1 <- getIndexDayOpenPrice(store, marketTs, oid)
+            res2 <- getIndexTickerOpenPrice(store, marketTs, oid)
+          } yield (res1, res2)).runToFuture.map(_ shouldBe (Some(openPriceA), Some(openPriceA)))
+        }
+        "not update index day if data of that day exists, update index ticker" in {
+          val marketTs2 = Micro(marketTs.value + 1000000000)
+          (for {
+            _ <- store.updateMarketStats(
+              oid = oid,
+              symbol = symbol,
+              seq = seq,
+              o = openPriceB,
+              c = closePriceA,
+              h = highPriceA,
+              l = lowPriceA,
+              previousClose = prevCloseA,
+              tradedVol = tradedVolA,
+              tradedValue = tradedValA,
+              change = changeA,
+              changePercent = 20,
+              tradeTs = tradeTs,
+              marketTs = marketTs2,
+              bananaTs = bananaTs
+            )
+            res1 <- getIndexDayOpenPrice(store, marketTs2, oid)
+            res2 <- getIndexTickerOpenPrice(store, marketTs2, oid)
+          } yield (res1, res2)).runToFuture.map(_ shouldBe (Some(openPriceA), Some(openPriceB)))
         }
       }
     }
@@ -774,10 +825,41 @@ object MySQLImplSpec {
   val storeEq: MySQLImpl       = Store.mysql(channel, mysqlConfig).asInstanceOf[MySQLImpl]
   val storeFu: MySQLImpl       = Store.mysql(Channel.fu, mysqlConfig).asInstanceOf[MySQLImpl]
 
-  val openPrice1: Price  = Price(100)
-  val closePrice1: Price = Price(110)
-  val openPrice2: Price  = Price(120)
-  val closePrice2: Price = Price(130)
+  def getIndexTickerOpenPrice(store: MySQLImpl, ts: Micro, oid: OrderbookId): Task[Option[Price8]] =
+    for {
+      marketDt <- Task(microToSqlDateTime(ts))
+      sql      <- Task(s"""
+           |SELECT OpenPrice FROM ${storeEq.indexTickerTable} WHERE TradeDate = ? AND SecCode = ?
+           |""".stripMargin)
+      data <- Task.fromFuture(
+        FutureConverters.asScala(store.connection.sendPreparedStatement(sql, Vector(marketDt, oid.value).asJava))
+      )
+      res <- Task(
+        data.getRows
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => Price8(p.getLong("OpenPrice")))
+          .headOption
+      )
+    } yield res
+
+  def getIndexDayOpenPrice(store: MySQLImpl, ts: Micro, oid: OrderbookId): Task[Option[Price8]] =
+    for {
+      marketDt <- Task(microToSqlDateTime(ts))
+      day      <- Task(localDateToMySqlDate(marketDt.toLocalDate))
+      sql      <- Task(s"""
+           |SELECT OpenPrice FROM ${storeEq.indexDayTable} WHERE TradeDate
+           |LIKE "${day.toString}%" AND SecCode = ${oid.value}
+           |""".stripMargin)
+      data     <- Task.fromFuture(FutureConverters.asScala(store.connection.sendPreparedStatement(sql, Vector().asJava)))
+      res <- Task(
+        data.getRows
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => Price8(p.getLong("OpenPrice")))
+          .headOption
+      )
+    } yield res
 
   def getIPOPrice(store: MySQLImpl, oid: OrderbookId): Task[Price] =
     for {

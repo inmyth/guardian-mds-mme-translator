@@ -31,7 +31,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
       .mapEval {
         case (seq, bytes) =>
           for {
-            now <- Task.now(Micro(System.nanoTime() / 1000))
+            now <- Task.now(Micro(System.currentTimeMillis() * 1000))
             msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
             res <- msg match {
               case a: SecondsMessage => store.saveSecond(a.getSeconds)
@@ -175,14 +175,14 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       oid = oid,
                       symbol = symbol,
                       seq = seq,
-                      o = Qty(a.getOpenValue),
-                      h = Qty(a.getHighValue),
-                      l = Qty(a.getLowValue),
-                      c = Qty(a.getValue),
-                      previousClose = Qty(a.getPreviousClose),
-                      tradedValue = Qty(a.getTradedValue),
+                      o = Price8(a.getOpenValue),
+                      h = Price8(a.getHighValue),
+                      l = Price8(a.getLowValue),
+                      c = Price8(a.getValue),
+                      previousClose = Price8(a.getPreviousClose),
+                      tradedValue = Price8(a.getTradedValue),
                       tradedVol = Qty(a.getTradedVolume),
-                      change = a.getChange,
+                      change = Price8(a.getChange),
                       changePercent = a.getChangePercent,
                       tradeTs = a.getTimestamp,
                       marketTs = mms,

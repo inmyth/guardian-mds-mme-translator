@@ -127,6 +127,27 @@ object Fixtures {
   val t1625: Micro = Micro(1675761930_123456L)
   val t1635: Micro = Micro(1675762530_123456L)
 
+  val openPrice1: Price = Price(100)
+  val closePrice1: Price = Price(110)
+  val openPrice2: Price = Price(120)
+  val closePrice2: Price = Price(130)
+  val openPriceA: Price8 = Price8(100L)
+  val openPriceB: Price8 = Price8(120L)
+  val closePriceA: Price8 = Price8(80L)
+  val closePriceB: Price8 = Price8(90L)
+  val highPriceA: Price8 = Price8(190L)
+  val highPriceB: Price8 = Price8(210L)
+  val lowPriceA: Price8 = Price8(70L)
+  val lowPriceB: Price8 = Price8(60L)
+  val prevCloseA: Price8 = Price8(75L)
+  val prevCloseB: Price8 = Price8(85L)
+  val tradedVolA: Qty = Qty(56000000L)
+  val tradedVolB: Qty = Qty(6670000L)
+  val tradedValA: Price8 = Price8(6845460000L)
+  val tradedValB: Price8 = Price8(973330000L)
+  val changeA: Price8 = Price8(3005656L)
+  val changeB: Price8 = Price8(6780000L)
+
   val action: FlatPriceLevelAction = FlatPriceLevelAction(
     oid = oid,
     symbol = symbol,
@@ -140,5 +161,4 @@ object Fixtures {
     levelUpdateAction = 'N',
     numDeletes = 0
   )
-
 }

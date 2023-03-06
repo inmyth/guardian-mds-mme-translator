@@ -9,11 +9,11 @@ import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
 import com.github.jasync.sql.db.Connection
 import com.github.jasync.sql.db.general.ArrayRowData
-import com.guardian.repo.MySQLImpl.localDateToMySqlDate
 import monix.eval.Task
 
 import java.lang
-import java.time.{Instant, LocalDate, LocalDateTime, LocalTime, ZoneId}
+import java.sql.Date
+import java.time._
 
 import scala.jdk.CollectionConverters._
 import scala.jdk.javaapi.FutureConverters
@@ -24,7 +24,16 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   private val t1230                       = LocalTime.parse("12:30")
   private val t1630                       = LocalTime.parse("16:30")
 
-  val (maxLevel, orderbookTable, tickerTable, dayTable, projectedTable, tradableInstrumentTable) = {
+  val (
+    maxLevel,
+    orderbookTable,
+    tickerTable,
+    dayTable,
+    projectedTable,
+    tradableInstrumentTable,
+    indexDayTable,
+    indexTickerTable
+  ) = {
     val (ml, which) = channel match {
       case Channel.eq => (10, "Equity")
       case Channel.fu => (5, "Derivative")
@@ -35,38 +44,41 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       s"mdsdb.MDS_${which}Ticker",
       s"mdsdb.MDS_${which}Day",
       s"mdsdb.MDS_${which}ProjectedPrice",
-      s"mdsdb.MDS_${which}TradableInstrument"
+      s"mdsdb.MDS_${which}TradableInstrument",
+      "mdsdb.MDS_IndexDay",
+      "mdsdb.MDS_IndexTicker"
     )
   }
 
-  val cOrderBookMDBidPrice: Int => String = (i: Int) => s"MDBid${i}Price"
-  val cOrderBookMDBidSize: Int => String  = (i: Int) => s"MDBid${i}Size"
-  val cOrderBookMDAskPrice: Int => String = (i: Int) => s"MDAsk${i}Price"
-  val cOrderBookMDAskSize: Int => String  = (i: Int) => s"MDAsk${i}Size"
-  val cSeqNo                              = "SeqNo"
-  val cUpdateTime                         = "UpdateTime"
-  val cSourceTime                         = "SourceTime"
-  val cReceivingTime                      = "ReceivingTime"
-  val cSecName                            = "SecName"
-  val cSecCode                            = "SecCode"
-  val cVolume                             = "Volume"
-  val cSecType                            = "SecType"
-  val cSecDesc                            = "SecDesc"
-  val cProjTime                           = "ProjTime"
-  val cProjPrice                          = "ProjPrice"
-  val cProjVolume                         = "ProjVolume"
-  val cProjImbalance                      = "ProjImbalance"
-  val cisFinal                            = "IsFinal"
-  val cTradeDate                          = "TradeDate"
-  val cOpen1Price                         = "Open1Price"
-  val cOpen2Price                         = "Open2Price"
-  val cClose1Price                        = "Close1Price"
-  val cClose2Price                        = "Close2Price"
-  val cOpenPrice                          = "OpenPrice"
-  val cClosePrice                         = "ClosePrice"
-  val cSettlementPrice                    = "SettlementPrice"
-  val cHighPrice                          = "HighPrice"
-  val cLowPrice                           = "LowPrice"
+  private val cOrderBookMDBidPrice: Int => String = (i: Int) => s"MDBid${i}Price"
+  private val cOrderBookMDBidSize: Int => String  = (i: Int) => s"MDBid${i}Size"
+  private val cOrderBookMDAskPrice: Int => String = (i: Int) => s"MDAsk${i}Price"
+  private val cOrderBookMDAskSize: Int => String  = (i: Int) => s"MDAsk${i}Size"
+  private val cSeqNo                              = "SeqNo"
+  private val cUpdateTime                         = "UpdateTime"
+  private val cSourceTime                         = "SourceTime"
+  private val cReceivingTime                      = "ReceivingTime"
+  private val cSecName                            = "SecName"
+  private val cSecCode                            = "SecCode"
+  private val cVolume                             = "Volume"
+  private val cValue                              = "Value"
+  private val cSecType                            = "SecType"
+  private val cSecDesc                            = "SecDesc"
+  private val cProjTime                           = "ProjTime"
+  private val cProjPrice                          = "ProjPrice"
+  private val cProjVolume                         = "ProjVolume"
+  private val cProjImbalance                      = "ProjImbalance"
+  private val cisFinal                            = "IsFinal"
+  private val cTradeDate                          = "TradeDate"
+  private val cOpen1Price                         = "Open1Price"
+  private val cOpen2Price                         = "Open2Price"
+  private val cClose1Price                        = "Close1Price"
+  private val cClose2Price                        = "Close2Price"
+  private val cOpenPrice                          = "OpenPrice"
+  private val cClosePrice                         = "ClosePrice"
+  private val cSettlementPrice                    = "SettlementPrice"
+  private val cHighPrice                          = "HighPrice"
+  private val cLowPrice                           = "LowPrice"
 
   override def connect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
 
@@ -80,22 +92,22 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   override def getSecond: Task[Either[AppError, Int]] =
     marketSecondDb.fold(SecondNotFound.asLeft[Int])(p => p.asRight).pure[Task]
 
-  val cAllowShortSell       = "AllowShortSell"
-  val cAllowNVDR            = "AllowNVDR"
-  val cAllowShortSellOnNVDR = "AllowShortSellOnNVDR"
-  val cAllowTTF             = "AllowTTF"
-  val cIsValidForTrading    = "IsValidForTrading"
-  val cIsOddLot             = "IsOddLot"
-  val cParValue             = "ParValue"
-  val cIPOPrice             = "IPOPrice"
-  val cSectorNumber         = "SectorNumber"
-  val cUnderlyingSecCode    = "UnderlyingSecCode"
-  val cUnderlyingSecName    = "UnderlyingSecName"
-  val cMaturityDate         = "MaturityDate"
-  val cContractMultiplier   = "ContractMultiplier"
-  val cSettlMethod          = "SettlMethod"
-  val dateFromMessageFmt    = new java.text.SimpleDateFormat("yyyyMMDD")
-  val dateToSqlFmt          = new java.text.SimpleDateFormat("yyyy-MM-dd")
+  private val cAllowShortSell       = "AllowShortSell"
+  private val cAllowNVDR            = "AllowNVDR"
+  private val cAllowShortSellOnNVDR = "AllowShortSellOnNVDR"
+  private val cAllowTTF             = "AllowTTF"
+  private val cIsValidForTrading    = "IsValidForTrading"
+  private val cIsOddLot             = "IsOddLot"
+  private val cParValue             = "ParValue"
+  private val cIPOPrice             = "IPOPrice"
+  private val cSectorNumber         = "SectorNumber"
+  private val cUnderlyingSecCode    = "UnderlyingSecCode"
+  private val cUnderlyingSecName    = "UnderlyingSecName"
+  private val cMaturityDate         = "MaturityDate"
+  private val cContractMultiplier   = "ContractMultiplier"
+  private val cSettlMethod          = "SettlMethod"
+  private val dateFromMessageFmt    = new java.text.SimpleDateFormat("yyyyMMDD")
+  private val dateToSqlFmt          = new java.text.SimpleDateFormat("yyyy-MM-dd")
 
   override def saveTradableInstrument(
       oid: OrderbookId,
@@ -365,14 +377,13 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       )
     } yield res).value
 
-  val cTradeTime     = "TradeTime"
-  val cSendingTime   = "SendingTime"
-  val cLastPrice     = "LastPrice"
-  val cBidAggressor  = "BidAggressor"
-  val cAskAggressor  = "AskAggressor"
-  val cIsTradeReport = "IsTradeReport"
-  val cMatchType     = "MatchType"
-  val cTradeQuantity = "TradeQuantity"
+  private val cTradeTime     = "TradeTime"
+  private val cSendingTime   = "SendingTime"
+  private val cLastPrice     = "LastPrice"
+  private val cBidAggressor  = "BidAggressor"
+  private val cAskAggressor  = "AskAggressor"
+  private val cIsTradeReport = "IsTradeReport"
+  private val cMatchType     = "MatchType"
 
   override def saveTicker(
       oid: OrderbookId,
@@ -785,42 +796,128 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
-      o: Qty,
-      h: Qty,
-      l: Qty,
-      c: Qty,
-      previousClose: Qty,
+      o: Price8,
+      h: Price8,
+      l: Price8,
+      c: Price8,
+      previousClose: Price8,
       tradedVol: Qty,
-      tradedValue: Qty,
-      change: Long,
+      tradedValue: Price8,
+      change: Price8,
       changePercent: Int,
       tradeTs: Long,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
-      sql <- EitherT.rightT[Task, AppError](s"""
-         |INSERT INTO $dayTable
-         |($cTradeDate, $cSecCode, $cSecName, $cOpen1Price, $cOpen2Price, $cClose1Price, $cClose2Price,
-         |$cSettlementPrice, $cHighPrice, $cLowPrice, $cVolume, $cBidAggressor, $cAskAggressor)
-         |VALUES
-         |(?,?,?,?,?,?,?,?,?,?,?,?,?)
-         |""".stripMargin)
-      params <- EitherT.rightT[Task, AppError] {
-        val tradeDate       = tradeTs
-        val secCode         = oid.value
-        val secName         = symbol.value
-        val openPx1         = 1
-        val openPx2         = 2
-        val closePx1        = 1
-        val closePx2        = 2
-        val settlementPrice = 1
-        val highPrice       = h.value
-        val lowPrice        = l.value
-        val volume          = tradedVol.value
-        val bidAggressor    = 1
-        val askAggressor    = 2
+      _ <- channel match {
+        case Channel.eq =>
+          for {
+            _ <- EitherT(
+              updateIndexDay(
+                oid = oid,
+                symbol = symbol,
+                o = o,
+                h = h,
+                l = l,
+                c = c,
+                tradedVol = tradedVol,
+                tradedValue = tradedValue,
+                marketTs = marketTs
+              )
+            )
+            _ <- EitherT(
+              updateIndexTicker(
+                oid = oid,
+                symbol = symbol,
+                o = o,
+                h = h,
+                l = l,
+                c = c,
+                tradedVol = tradedVol,
+                tradedValue = tradedValue,
+                marketTs = marketTs
+              )
+            )
+          } yield ()
+
+        case Channel.fu => EitherT.rightT[Task, AppError](())
       }
+    } yield ()).value
+
+  def updateIndexDay(
+      oid: OrderbookId,
+      symbol: Instrument,
+      o: Price8,
+      h: Price8,
+      l: Price8,
+      c: Price8,
+      tradedVol: Qty,
+      tradedValue: Price8,
+      marketTs: Micro
+  ): Task[Either[AppError, Unit]] =
+    (for {
+      marketDt <- EitherT.rightT[Task, AppError](microToSqlDateTime(marketTs))
+      today    <- EitherT.rightT[Task, AppError](localDateToMySqlDate(marketDt.toLocalDate))
+      sql      <- EitherT.rightT[Task, AppError](s"""
+         |INSERT INTO $indexDayTable
+         |($cTradeDate, $cSecCode, $cSecName, $cOpenPrice, $cClosePrice, $cHighPrice, $cLowPrice, $cVolume, $cValue)
+         |VALUES
+         |(?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE $cSecCode=$cSecCode;
+         |""".stripMargin)
+      params <- EitherT.rightT[Task, AppError](
+        Vector(
+          today,
+          oid.value,
+          symbol.value,
+          o.value,
+          c.value,
+          h.value,
+          l.value,
+          tradedVol.value,
+          tradedValue.value
+        )
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
+    } yield ()).value
+
+  def updateIndexTicker(
+      oid: OrderbookId,
+      symbol: Instrument,
+      o: Price8,
+      h: Price8,
+      l: Price8,
+      c: Price8,
+      tradedVol: Qty,
+      tradedValue: Price8,
+      marketTs: Micro
+  ): Task[Either[AppError, Unit]] =
+    (for {
+      marketDt <- EitherT.rightT[Task, AppError](microToSqlDateTime(marketTs))
+      sql      <- EitherT.rightT[Task, AppError](s"""
+           |INSERT INTO $indexTickerTable
+           |($cTradeDate, $cSecCode, $cSecName, $cOpenPrice, $cClosePrice, $cHighPrice, $cLowPrice, $cVolume, $cValue)
+           |VALUES
+           |(?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE $cSecCode=$cSecCode;
+           |""".stripMargin)
+      params <- EitherT.rightT[Task, AppError](
+        Vector(
+          marketDt,
+          oid.value,
+          symbol.value,
+          o.value,
+          c.value,
+          h.value,
+          l.value,
+          tradedVol.value,
+          tradedValue.value
+        )
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
     } yield ()).value
 
   override def updateMySqlIPOPrice(oid: OrderbookId, ipoPrice: Price): Task[Either[AppError, Unit]] =
@@ -964,6 +1061,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
              |));
              |""".stripMargin)
       }
+
       eda <- EitherT.rightT[Task, AppError](s"""
              |CREATE TABLE mdsdb.MDS_EquityDay(
              |	$cTradeDate datetime(6) NOT NULL,
@@ -987,6 +1085,40 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
              |	$cSecCode ASC
              |));
              |""".stripMargin)
+      idd <- EitherT.rightT[Task, AppError](s"""
+           |CREATE TABLE mdsdb.MDS_IndexDay(
+           |  $cTradeDate date NOT NULL,
+           |  $cSecCode int NOT NULL,
+           |  $cSecName varchar(20) NULL,
+           |  $cOpenPrice bigint NULL,
+           |  $cClosePrice bigint NULL,
+           |  $cHighPrice bigint NULL,
+           |  $cLowPrice bigint NULL,
+           |  $cVolume bigint NULL,
+           |  $cValue bigint NULL,
+           |CONSTRAINT PK_MDS_IndexDay PRIMARY KEY CLUSTERED
+           |(
+           |  $cTradeDate ASC,
+           |  $cSecCode ASC
+           |));
+           |""".stripMargin)
+      idt <- EitherT.rightT[Task, AppError](s"""
+           |CREATE TABLE mdsdb.MDS_IndexTicker(
+           |  $cTradeDate datetime(6) NOT NULL,
+           |  $cSecCode int NOT NULL,
+           |  $cSecName varchar(20) NULL,
+           |  $cOpenPrice bigint NULL,
+           |  $cClosePrice bigint NULL,
+           |  $cHighPrice bigint NULL,
+           |  $cLowPrice bigint NULL,
+           |  $cVolume bigint NULL,
+           |  $cValue bigint NULL,
+           |CONSTRAINT PK_MDS_IndexTicker PRIMARY KEY CLUSTERED
+           |(
+           |  $cTradeDate ASC,
+           |  $cSecCode ASC
+           |));
+           |""".stripMargin)
       _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(drop))))
       _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))))
       _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))))
@@ -1002,13 +1134,15 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       _ <-
         EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.last))))
       _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eda))))
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idd))))
+      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idt))))
     } yield ()).value
 }
 
 object MySQLImpl {
   val zoneId: ZoneId = ZoneId.of("Asia/Bangkok")
 
-  def localDateToMySqlDate(l: LocalDate) = java.sql.Date.valueOf(l)
+  def localDateToMySqlDate(l: LocalDate): Date = java.sql.Date.valueOf(l)
   def microToSqlDateTime(m: Micro): LocalDateTime =
     Instant
       .ofEpochMilli(m.value / 1000)
