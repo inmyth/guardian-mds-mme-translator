@@ -22,7 +22,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
     "connect and flushAll" should {
       "connect to db and clear all data" in {
         (for {
-          _ <- store.connect
+          _ <- store.connect(false)
           _ <- store.asInstanceOf[RedisImpl].flushAll
         } yield ()).runToFuture.map(_ shouldBe ())
       }

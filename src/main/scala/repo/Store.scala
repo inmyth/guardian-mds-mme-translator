@@ -21,7 +21,7 @@ abstract class Store(channel: Channel) {
   val keyKlein: Instrument => String       = (symbol: Instrument) => s"${channel.toString}:klein:${symbol.value}"
   val keyMarketStats: Instrument => String = (symbol: Instrument) => s"id:mkt:${symbol.value}"
 
-  def connect: Task[Either[AppError, Unit]]
+  def connect(createTable: Boolean): Task[Either[AppError, Unit]]
 
   def disconnect: Task[Either[AppError, Unit]]
 
@@ -185,7 +185,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
   private var projectedDb: Map[String, Vector[ProjectedItem]]     = Map.empty
   var klineDb: Map[String, Vector[KlineItem]]                     = Map.empty
   private var marketStatsDb: Map[String, Vector[MarketStatsItem]] = Map.empty
-  override def connect: Task[Either[AppError, Unit]]              = ().asRight.pure[Task]
+  override def connect(createTable: Boolean): Task[Either[AppError, Unit]]              = ().asRight.pure[Task]
 
   override def disconnect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
 
@@ -482,8 +482,12 @@ object Store {
     new RedisImpl(channel, RedisClient.create(s"redis://${redisConfig.host}:${redisConfig.port}"))
 
   def mysql(channel: Channel, mySqlConfig: MySqlConfig): Store = {
-    val connection =
-      MySQLConnectionBuilder.createConnectionPool(s"jdbc:mysql://${mySqlConfig.host}:${mySqlConfig.port}/mdsdb")
+    var url = s"jdbc:mysql://${mySqlConfig.host}:${mySqlConfig.port}/mdsdb"
+    if (mySqlConfig.user.isDefined && mySqlConfig.password.isDefined) {
+      val extra = s"?user=${mySqlConfig.user.get}&password=${mySqlConfig.password.get}"
+      url = url + extra
+    }
+    val connection = MySQLConnectionBuilder.createConnectionPool(url)
     new MySQLImpl(channel, connection)
   }
 }

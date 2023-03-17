@@ -4,6 +4,7 @@ import AppError.ConfigError
 import cats.data.EitherT
 import cats.implicits.toBifunctorOps
 import com.guardian
+import com.guardian.Config.DbType
 import monix.eval.Task
 import monix.execution.Scheduler
 import pureconfig.ConfigSource
@@ -24,8 +25,10 @@ object Main extends App {
     )
     groupId <- EitherT.rightT[Task, AppError](conf.genGroupID)
     cons    <- EitherT.rightT[Task, AppError](Consumer.setup(conf, groupId))
-    _       <- EitherT(cons.connectToStore)
-    _       <- EitherT.right[guardian.AppError](cons.run)
+    shouldCreateTables =
+      if (conf.dbType == DbType.mysql && conf.mySqlConfig.createTable.getOrElse(false)) true else false
+    _ <- EitherT(cons.connectToStore(shouldCreateTables))
+    _ <- EitherT.right[guardian.AppError](cons.run)
   } yield ()).value.runToFuture.map {
     case Right(_) => println("App running")
 

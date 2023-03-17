@@ -821,7 +821,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
 
 object MySQLImplSpec {
 
-  val mysqlConfig: MySqlConfig = MySqlConfig("localhost", 3306, None)
+  val mysqlConfig: MySqlConfig = MySqlConfig("localhost", 3306, None, None, None)
   val storeEq: MySQLImpl       = Store.mysql(channel, mysqlConfig).asInstanceOf[MySQLImpl]
   val storeFu: MySQLImpl       = Store.mysql(Channel.fu, mysqlConfig).asInstanceOf[MySQLImpl]
 

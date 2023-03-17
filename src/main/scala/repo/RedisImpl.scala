@@ -21,7 +21,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   private var connection: Option[StatefulRedisConnection[String, String]] = Option.empty
   private var commands: Option[RedisCommands[String, String]]             = Option.empty
 
-  override def connect: Task[Either[AppError, Unit]] = {
+  override def connect(createTables: Boolean): Task[Either[AppError, Unit]] = {
     Try {
       client.connect()
     } match {

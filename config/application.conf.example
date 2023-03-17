@@ -11,4 +11,7 @@ redis-config = {
 my-sql-config = {
   host = "localhost"
   port = 3306
+  user = "admin"
+  password = "pass"
+  create-table = true
 }

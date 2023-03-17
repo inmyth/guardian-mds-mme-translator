@@ -80,7 +80,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   private val cHighPrice                          = "HighPrice"
   private val cLowPrice                           = "LowPrice"
 
-  override def connect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
+  override def connect(createTable: Boolean): Task[Either[AppError, Unit]] =
+    if (createTable) createTables() else ().asRight.pure[Task]
 
   override def disconnect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
 
@@ -933,7 +934,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       )
     } yield ()).value
 
-  def createTables: Task[Either[AppError, Unit]] =
+  def createTables(): Task[Either[AppError, Unit]] =
     (for {
       drop <- EitherT.rightT[Task, AppError](s"""
            |DROP DATABASE mdsdb;

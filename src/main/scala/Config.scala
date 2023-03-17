@@ -31,7 +31,13 @@ object Config {
 
   case class RedisConfig(host: String, port: Int, password: Option[String])
 
-  case class MySqlConfig(host: String, port: Int, password: Option[String])
+  case class MySqlConfig(
+      host: String,
+      port: Int,
+      user: Option[String],
+      password: Option[String],
+      createTable: Option[Boolean]
+  )
 
   sealed trait Channel
 

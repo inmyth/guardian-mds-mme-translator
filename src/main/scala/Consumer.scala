@@ -223,7 +223,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
       _ <- run
     } yield ()
 
-  def connectToStore: Task[Either[AppError, Unit]] = store.connect
+  def connectToStore(createTables: Boolean): Task[Either[AppError, Unit]] = store.connect(createTables)
 }
 
 object Consumer {
