@@ -1,7 +1,7 @@
 package com.guardian
 package repo
 
-import AppError.{SecondNotFound, SymbolNotFound}
+import AppError.{OrderbookUpdateError, SecondNotFound, SymbolNotFound}
 import Config.{Channel, MySqlConfig, RedisConfig}
 import entity._
 import repo.InMemImpl.{KlineItem, MarketStatsItem, ProjectedItem, TickerItem}
@@ -11,8 +11,9 @@ import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
 import com.github.jasync.sql.db.mysql.MySQLConnectionBuilder
 import io.lettuce.core.RedisClient
 import monix.eval.Task
+import org.apache.logging.log4j.scala.Logging
 
-abstract class Store(channel: Channel) {
+abstract class Store(channel: Channel) extends Logging {
   val keyTradableInstrument                = s"${channel.toString}:symbol_reference"
   val keySecond                            = s"${channel.toString}:second"
   val keyOrderbook: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
@@ -61,9 +62,9 @@ abstract class Store(channel: Channel) {
         else {
           EitherT.rightT[Task, AppError](OrderbookItem.empty(item.maxLevel))
         }
-      nuPriceLevels <- EitherT.rightT[Task, AppError](item.levelUpdateAction match {
-        case 'N' => lastItem.insert(item.price, item.qty, item.marketTs, item.level, item.side)
-        case 'D' => lastItem.delete(side = item.side, level = item.level, numDeletes = item.numDeletes)
+      nuPriceLevels <- EitherT.fromEither[Task](item.levelUpdateAction match {
+        case 'N' => lastItem.insert(item.price, item.qty, item.marketTs, item.level, item.side).asRight
+        case 'D' => lastItem.delete(side = item.side, level = item.level, numDeletes = item.numDeletes).asRight
         case _ =>
           lastItem
             .update(side = item.side, level = item.level, price = item.price, qty = item.qty, marketTs = item.marketTs)
@@ -80,7 +81,11 @@ abstract class Store(channel: Channel) {
         )
       )
       _ <- EitherT(saveOrderbookItem(item.symbol, orderbookId, update))
-    } yield ()).value
+    } yield ()).recoverWith {
+      case e: OrderbookUpdateError =>
+        logger.error(e.asInstanceOf[AppError].msg)
+        EitherT.rightT[Task, AppError](())
+    }.value
 
   def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]]
 

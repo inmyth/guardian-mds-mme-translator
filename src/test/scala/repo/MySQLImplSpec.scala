@@ -108,35 +108,123 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
             )
           }
         }
-        "U" should {
-          "update levels" in {
-            (for {
-              _ <- store.updateOrderbook(
-                seq,
-                oid,
-                action.copy(
-                  price = bidPrice2,
-                  qty = bidQty2,
-                  marketTs = bidTime2,
-                  side = Side('B'),
-                  levelUpdateAction = 'U'
+        /*
+        "U" when {
+          "level is no larger than current prices" should {
+            "update and return the last item" in {
+              (for {
+                _ <- store.updateOrderbook(
+                  seq,
+                  oid,
+                  action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U')
                 )
-              )
-              last <- store.getLastOrderbookItem(symbol)
-            } yield last).runToFuture.map(p =>
-              p shouldBe Right(
-                Some(
-                  OrderbookItem(
-                    seq,
-                    maxLevel,
-                    asks = Vector(Some((askPrice1, askQty1, Micro(0L)))),
-                    bids = Vector(Some((bidPrice2, bidQty2, Micro(0L)))),
-                    marketTs = bidTime2,
-                    bananaTs = bananaTs
+                last <- store.getLastOrderbookItem(symbol)
+              } yield last).runToFuture.map(p =>
+                p shouldBe Right(
+                  Some(
+                    OrderbookItem(
+                      seq,
+                      maxLevel,
+                      asks = Vector(Some((askPrice2, askQty2, askTime2))),
+                      bids = Vector(),
+                      marketTs = askTime2,
+                      bananaTs = bananaTs
+                    )
                   )
                 )
               )
-            )
+            }
+          }
+          "level is larger than current prices size" should {
+            "not update and return the last item" in {
+              (for {
+                _ <- store.updateOrderbook(
+                  seq,
+                  oid,
+                  action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U', level = Byte.MaxValue)
+                )
+                last <- store.getLastOrderbookItem(symbol)
+              } yield last).runToFuture.map(p =>
+                p shouldBe Right(
+                  Some(
+                    OrderbookItem(
+                      seq,
+                      maxLevel,
+                      asks = Vector(Some((askPrice2, askQty2, askTime2))),
+                      bids = Vector(),
+                      marketTs = askTime2,
+                      bananaTs = bananaTs
+                    )
+                  )
+                )
+              )
+            }
+          }
+        }
+         */
+        "U" when {
+          "level is no larger than price sizes" should {
+            "update the price level" in {
+              (for {
+                _ <- store.updateOrderbook(
+                  seq,
+                  oid,
+                  action.copy(
+                    price = bidPrice2,
+                    qty = bidQty2,
+                    marketTs = bidTime2,
+                    side = Side('B'),
+                    levelUpdateAction = 'U'
+                  )
+                )
+                last <- store.getLastOrderbookItem(symbol)
+              } yield last).runToFuture.map(p =>
+                p shouldBe Right(
+                  Some(
+                    OrderbookItem(
+                      seq,
+                      maxLevel,
+                      asks = Vector(Some((askPrice1, askQty1, Micro(0L)))),
+                      bids = Vector(Some((bidPrice2, bidQty2, Micro(0L)))),
+                      marketTs = bidTime2,
+                      bananaTs = bananaTs
+                    )
+                  )
+                )
+              )
+            }
+          }
+          "level is larger than price levels" should {
+            "not update" in {
+              (for {
+                _ <- store.updateOrderbook(
+                  seq,
+                  oid,
+                  action.copy(
+                    price = bidPrice2,
+                    qty = bidQty2,
+                    marketTs = bidTime2,
+                    side = Side('B'),
+                    levelUpdateAction = 'U',
+                    level = Byte.MaxValue
+                  )
+                )
+                last <- store.getLastOrderbookItem(symbol)
+              } yield last).runToFuture.map(p =>
+                p shouldBe Right(
+                  Some(
+                    OrderbookItem(
+                      seq,
+                      maxLevel,
+                      asks = Vector(Some((askPrice1, askQty1, Micro(0L)))),
+                      bids = Vector(Some((bidPrice2, bidQty2, Micro(0L)))),
+                      marketTs = bidTime2,
+                      bananaTs = bananaTs
+                    )
+                  )
+                )
+              )
+            }
           }
         }
         "D" should {

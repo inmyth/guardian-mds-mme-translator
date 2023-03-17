@@ -4,6 +4,7 @@ package repo
 import Fixtures._
 import entity.{Micro, Price, Qty}
 
+import com.guardian.AppError.OrderbookUpdateError
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -55,15 +56,27 @@ class OrderbookItemSpec extends AsyncWordSpec with Matchers {
         actual shouldBe expected
       }
     }
-    "update" should {
-      "return updated list" in {
-        val level    = 2
-        val newPrice = Price(400)
-        val newQty   = Qty(1500L)
-        val serverTs = Micro(1675752890L)
-        val actual   = orderbookItem.update(side, level, newPrice, newQty, serverTs)
-        val expected = bids.updated(1, Some((newPrice, newQty, serverTs)))
-        actual shouldBe expected
+    "update" when {
+      "level is no larger than current price item size" should {
+        "return the prices with updated level" in {
+          val level    = 2
+          val newPrice = Price(400)
+          val newQty   = Qty(1500L)
+          val serverTs = Micro(1675752890L)
+          val actual   = orderbookItem.update(side, level, newPrice, newQty, serverTs)
+          val expected = bids.updated(1, Some((newPrice, newQty, serverTs)))
+          actual shouldBe Right(expected)
+        }
+      }
+      "level is larger than current price item size" should {
+        "return the error" in {
+          val level    = Int.MaxValue
+          val newPrice = Price(400)
+          val newQty   = Qty(1500L)
+          val serverTs = Micro(1675752890L)
+          val actual   = orderbookItem.update(side, level, newPrice, newQty, serverTs)
+          actual shouldBe Left(OrderbookUpdateError(level = Int.MaxValue, realSize = 10))
+        }
       }
     }
   }

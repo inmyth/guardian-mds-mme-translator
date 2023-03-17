@@ -83,28 +83,57 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           )
         )
       }
-      "U" in {
-        (for {
-          _ <- store.updateOrderbook(
-            seq,
-            oid,
-            action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U')
-          )
-          last <- store.getLastOrderbookItem(symbol)
-        } yield last).runToFuture.map(p =>
-          p shouldBe Right(
-            Some(
-              OrderbookItem(
+      "U" when {
+        "level is no larger than current prices" should {
+          "update and return the last item" in {
+            (for {
+              _ <- store.updateOrderbook(
                 seq,
-                maxLevel,
-                asks = Vector(Some((askPrice2, askQty2, askTime2))),
-                bids = Vector(),
-                marketTs = askTime2,
-                bananaTs = bananaTs
+                oid,
+                action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U')
+              )
+              last <- store.getLastOrderbookItem(symbol)
+            } yield last).runToFuture.map(p =>
+              p shouldBe Right(
+                Some(
+                  OrderbookItem(
+                    seq,
+                    maxLevel,
+                    asks = Vector(Some((askPrice2, askQty2, askTime2))),
+                    bids = Vector(),
+                    marketTs = askTime2,
+                    bananaTs = bananaTs
+                  )
+                )
               )
             )
-          )
-        )
+          }
+        }
+        "level is larger than current prices size" should {
+          "not update and return the last item" in {
+            (for {
+              _ <- store.updateOrderbook(
+                seq,
+                oid,
+                action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U', level = Byte.MaxValue)
+              )
+              last <- store.getLastOrderbookItem(symbol)
+            } yield last).runToFuture.map(p =>
+              p shouldBe Right(
+                Some(
+                  OrderbookItem(
+                    seq,
+                    maxLevel,
+                    asks = Vector(Some((askPrice2, askQty2, askTime2))),
+                    bids = Vector(),
+                    marketTs = askTime2,
+                    bananaTs = bananaTs
+                  )
+                )
+              )
+            )
+          }
+        }
       }
       "D" in {
         (for {
