@@ -36,7 +36,6 @@ object Config {
       port: Int,
       user: Option[String],
       password: Option[String],
-      createTable: Option[Boolean]
   )
 
   sealed trait Channel

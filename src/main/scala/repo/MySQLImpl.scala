@@ -9,6 +9,7 @@ import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
 import com.github.jasync.sql.db.Connection
 import com.github.jasync.sql.db.general.ArrayRowData
+import com.github.jasync.sql.db.mysql.exceptions.MySQLException
 import monix.eval.Task
 
 import java.lang
@@ -80,8 +81,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   private val cHighPrice                          = "HighPrice"
   private val cLowPrice                           = "LowPrice"
 
-  override def connect(createTable: Boolean): Task[Either[AppError, Unit]] =
-    if (createTable) createTables() else ().asRight.pure[Task]
+  override def connect(): Task[Either[AppError, Unit]] = createTables()
 
   override def disconnect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
 
@@ -936,13 +936,10 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
 
   def createTables(): Task[Either[AppError, Unit]] =
     (for {
-      drop <- EitherT.rightT[Task, AppError](s"""
-           |DROP DATABASE mdsdb;
-           |""".stripMargin)
-      sch  <- EitherT.rightT[Task, AppError](s"""
+      sch <- EitherT.rightT[Task, AppError](s"""
            |CREATE DATABASE mdsdb CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
            |""".stripMargin)
-      eti  <- EitherT.rightT[Task, AppError](s"""
+      eti <- EitherT.rightT[Task, AppError](s"""
            |CREATE TABLE mdsdb.MDS_EquityTradableInstrument(
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar(20) NULL,
@@ -961,7 +958,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  PRIMARY KEY ($cSecCode)
            |);
            |""".stripMargin)
-      dti  <- EitherT.rightT[Task, AppError](s"""
+      dti <- EitherT.rightT[Task, AppError](s"""
            |CREATE TABLE mdsdb.MDS_DerivativeTradableInstrument(
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar (20) NULL,
@@ -1120,23 +1117,51 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cSecCode ASC
            |));
            |""".stripMargin)
-      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(drop))))
-      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))))
-      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))))
-      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dti))))
-      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eob))))
-      _   <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dob))))
-      _ <-
-        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.head))))
-      _ <-
-        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.last))))
-      _ <-
-        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.head))))
-      _ <-
-        EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.last))))
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eda))))
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idd))))
-      _ <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idt))))
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))).onErrorRecover { case _ => () }
+      )
+
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eti))).onErrorRecover { case _ => () }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dti))).onErrorRecover { case _ => () }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eob))).onErrorRecover { case _ => () }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(dob))).onErrorRecover { case _ => () }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.head))).onErrorRecover {
+          case _ => ()
+        }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(tck.last))).onErrorRecover {
+          case _ => ()
+        }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.head))).onErrorRecover {
+          case _ => ()
+        }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(prj.last))).onErrorRecover {
+          case _ => ()
+        }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(eda))).onErrorRecover { case _ => () }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idd))).onErrorRecover { case _ => () }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idt))).onErrorRecover { case _ => () }
+      )
     } yield ()).value
 }
 

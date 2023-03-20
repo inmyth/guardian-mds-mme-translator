@@ -21,7 +21,7 @@ abstract class Store(channel: Channel) {
   val keyKlein: Instrument => String       = (symbol: Instrument) => s"${channel.toString}:klein:${symbol.value}"
   val keyMarketStats: Instrument => String = (symbol: Instrument) => s"id:mkt:${symbol.value}"
 
-  def connect(createTable: Boolean): Task[Either[AppError, Unit]]
+  def connect(): Task[Either[AppError, Unit]]
 
   def disconnect: Task[Either[AppError, Unit]]
 
@@ -185,7 +185,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
   private var projectedDb: Map[String, Vector[ProjectedItem]]     = Map.empty
   var klineDb: Map[String, Vector[KlineItem]]                     = Map.empty
   private var marketStatsDb: Map[String, Vector[MarketStatsItem]] = Map.empty
-  override def connect(createTable: Boolean): Task[Either[AppError, Unit]]              = ().asRight.pure[Task]
+  override def connect(): Task[Either[AppError, Unit]]            = ().asRight.pure[Task]
 
   override def disconnect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
 

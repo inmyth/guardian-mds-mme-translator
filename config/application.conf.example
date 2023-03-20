@@ -13,5 +13,4 @@ my-sql-config = {
   port = 3306
   user = "admin"
   password = "pass"
-  create-table = true
 }

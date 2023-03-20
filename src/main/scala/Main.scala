@@ -25,9 +25,7 @@ object Main extends App {
     )
     groupId <- EitherT.rightT[Task, AppError](conf.genGroupID)
     cons    <- EitherT.rightT[Task, AppError](Consumer.setup(conf, groupId))
-    shouldCreateTables =
-      if (conf.dbType == DbType.mysql && conf.mySqlConfig.createTable.getOrElse(false)) true else false
-    _ <- EitherT(cons.connectToStore(shouldCreateTables))
+    _ <- EitherT(cons.connectToStore())
     _ <- EitherT.right[guardian.AppError](cons.run)
   } yield ()).value.runToFuture.map {
     case Right(_) => println("App running")

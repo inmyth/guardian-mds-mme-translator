@@ -3,10 +3,10 @@ package repo
 
 import Config.{Channel, MySqlConfig}
 import Fixtures._
-import entity.{Micro, OrderbookId, Price, Price8, Qty, Side}
+import entity._
+import repo.MySQLImpl._
 
 import com.github.jasync.sql.db.general.ArrayRowData
-import MySQLImpl.{microToSqlDateTime, _}
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.scalatest.matchers.should.Matchers
@@ -16,9 +16,6 @@ import java.lang
 
 import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.jdk.javaapi.FutureConverters
-import java.time.{LocalDateTime, ZoneOffset}
-
-import scala.util.Random
 
 class MySQLImplSpec extends AsyncWordSpec with Matchers {
   import MySQLImplSpec._
@@ -28,7 +25,8 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
     "either" should {
       "drop and recreate the db" in {
         (for {
-          _ <- storeEq.createTables
+          _ <- dropAllTables(storeEq)
+          _ <- storeEq.createTables()
         } yield ()).runToFuture.map(_ shouldBe ())
       }
     }
@@ -821,9 +819,17 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
 
 object MySQLImplSpec {
 
-  val mysqlConfig: MySqlConfig = MySqlConfig("localhost", 3306, None, None, None)
+  val mysqlConfig: MySqlConfig = MySqlConfig("localhost", 3306, None, None)
   val storeEq: MySQLImpl       = Store.mysql(channel, mysqlConfig).asInstanceOf[MySQLImpl]
   val storeFu: MySQLImpl       = Store.mysql(Channel.fu, mysqlConfig).asInstanceOf[MySQLImpl]
+
+  def dropAllTables(store: MySQLImpl): Task[Unit] =
+    for {
+      drop <- Task.now(s"""
+           |DROP DATABASE mdsdb;
+           |""".stripMargin)
+      _    <- Task.fromFuture(FutureConverters.asScala(store.connection.sendPreparedStatement(drop)))
+    } yield ()
 
   def getIndexTickerOpenPrice(store: MySQLImpl, ts: Micro, oid: OrderbookId): Task[Option[Price8]] =
     for {
