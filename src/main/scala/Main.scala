@@ -5,6 +5,7 @@ import cats.data.EitherT
 import cats.implicits.toBifunctorOps
 import com.guardian
 import com.guardian.Config.DbType
+import com.typesafe.scalalogging.{LazyLogging, Logger}
 import monix.eval.Task
 import monix.execution.Scheduler
 import pureconfig.ConfigSource
@@ -13,7 +14,7 @@ import pureconfig.generic.auto._
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 
-object Main extends App {
+object Main extends App with LazyLogging {
   implicit val scheduler: Scheduler = monix.execution.Scheduler.global
 
   private val awaitable = (for {
@@ -23,8 +24,8 @@ object Main extends App {
         .load[Config]
         .leftMap(e => ConfigError(s"Cannot load config: $e"))
     )
-    groupId <- EitherT.rightT[Task, AppError](conf.genGroupID)
-    cons    <- EitherT.rightT[Task, AppError](Consumer.setup(conf, groupId))
+    _ <- EitherT.rightT[Task, AppError](logger.info(conf.toString))
+    cons    <- EitherT.rightT[Task, AppError](Consumer.setup(conf))
     _ <- EitherT(cons.connectToStore())
     _ <- EitherT.right[guardian.AppError](cons.run)
   } yield ()).value.runToFuture.map {

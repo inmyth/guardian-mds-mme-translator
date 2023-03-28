@@ -2,17 +2,19 @@ package com.guardian
 package repo
 
 import AppError.{SecondNotFound, SymbolNotFound}
-import Config.{Channel, MySqlConfig, RedisConfig}
+import Config.{Channel, DbType, MySqlConfig, RedisConfig}
 import entity._
 import repo.InMemImpl.{KlineItem, MarketStatsItem, ProjectedItem, TickerItem}
 
 import cats.data.EitherT
-import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
+import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId, toTraverseOps}
 import com.github.jasync.sql.db.mysql.MySQLConnectionBuilder
 import io.lettuce.core.RedisClient
 import monix.eval.Task
 
-abstract class Store(channel: Channel) {
+abstract class Store(val channel: Channel, dbType: DbType) {
+  import Store._
+
   val keyTradableInstrument                = s"${channel.toString}:symbol_reference"
   val keySecond                            = s"${channel.toString}:second"
   val keyOrderbook: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
@@ -51,7 +53,30 @@ abstract class Store(channel: Channel) {
   ): Task[Either[AppError, Unit]]
   def getInstrument(orderbookId: OrderbookId): Task[Either[AppError, Instrument]]
 
-  def updateOrderbook(seq: Long, orderbookId: OrderbookId, item: FlatPriceLevelAction): Task[Either[AppError, Unit]] =
+  def updateOrderbook(
+      seq: Long,
+      orderbookId: OrderbookId,
+      acts: Seq[FlatPriceLevelAction]
+  ): Task[Either[AppError, Unit]] =
+    (for {
+      _ <- dbType match {
+        case DbType.redis =>
+          EitherT.right[AppError](acts.map(p => updateOrderbookNonAggregate(seq, orderbookId, p)).sequence)
+        case DbType.mysql =>
+          for {
+            ref       <- EitherT.rightT[Task, AppError](acts.head)
+            maybeItem <- EitherT(getLastOrderbookItem(ref.symbol))
+            update    <- EitherT(updateOrderbookAggregate(seq, maybeItem, acts))
+            _         <- EitherT(saveOrderbookItem(ref.symbol, orderbookId, update))
+          } yield ()
+      }
+    } yield ()).value
+
+  def updateOrderbookNonAggregate(
+      seq: Long,
+      orderbookId: OrderbookId,
+      item: FlatPriceLevelAction
+  ): Task[Either[AppError, Unit]] =
     (for {
       maybeItem <- EitherT(getLastOrderbookItem(item.symbol))
       lastItem <-
@@ -61,13 +86,7 @@ abstract class Store(channel: Channel) {
         else {
           EitherT.rightT[Task, AppError](OrderbookItem.empty(item.maxLevel))
         }
-      nuPriceLevels <- EitherT.rightT[Task, AppError](item.levelUpdateAction match {
-        case 'N' => lastItem.insert(item.price, item.qty, item.marketTs, item.level, item.side)
-        case 'D' => lastItem.delete(side = item.side, level = item.level, numDeletes = item.numDeletes)
-        case _ =>
-          lastItem
-            .update(side = item.side, level = item.level, price = item.price, qty = item.qty, marketTs = item.marketTs)
-      })
+      nuPriceLevels <- EitherT.rightT[Task, AppError](buildPriceLevels(lastItem, item))
       update <- EitherT.rightT[Task, AppError](
         OrderbookItem.reconstruct(
           nuPriceLevels,
@@ -81,6 +100,35 @@ abstract class Store(channel: Channel) {
       )
       _ <- EitherT(saveOrderbookItem(item.symbol, orderbookId, update))
     } yield ()).value
+
+  def updateOrderbookAggregate(
+      seq: Long,
+      lastItem: Option[OrderbookItem],
+      items: Seq[FlatPriceLevelAction]
+  ): Task[Either[AppError, OrderbookItem]] =
+    (for {
+      ref <- EitherT.rightT[Task, AppError](items.head)
+      start <-
+        if (lastItem.isDefined) {
+          EitherT.rightT[Task, AppError](lastItem.get)
+        }
+        else {
+          EitherT.rightT[Task, AppError](OrderbookItem.empty(ref.maxLevel))
+        }
+      update <- EitherT.rightT[Task, AppError](items.indices.foldLeft(start)((cur, index) => {
+        val item          = items(index)
+        val nuPriceLevels = buildPriceLevels(cur, item)
+        OrderbookItem.reconstruct(
+          nuPriceLevels,
+          side = item.side.value,
+          seq = seq,
+          maxLevel = item.maxLevel,
+          marketTs = item.marketTs,
+          bananaTs = item.bananaTs,
+          origin = cur
+        )
+      }))
+    } yield update).value
 
   def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]]
 
@@ -176,7 +224,7 @@ abstract class Store(channel: Channel) {
 
 }
 
-class InMemImpl(channel: Channel) extends Store(channel) {
+class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
 
   private var marketSecondDb: Option[Int]                         = None
   private var symbolReferenceDb: Map[OrderbookId, Instrument]     = Map.empty
@@ -477,6 +525,14 @@ object InMemImpl {
 }
 
 object Store {
+
+  def buildPriceLevels(base: OrderbookItem, item: FlatPriceLevelAction): Seq[Option[(Price, Qty, Micro)]] =
+    item.levelUpdateAction match {
+      case 'N' => base.insert(item.price, item.qty, item.marketTs, item.level, item.side)
+      case 'D' => base.delete(side = item.side, level = item.level, numDeletes = item.numDeletes)
+      case _ =>
+        base.update(side = item.side, level = item.level, price = item.price, qty = item.qty, marketTs = item.marketTs)
+    }
 
   def redis(channel: Channel, redisConfig: RedisConfig): Store =
     new RedisImpl(channel, RedisClient.create(s"redis://${redisConfig.host}:${redisConfig.port}"))

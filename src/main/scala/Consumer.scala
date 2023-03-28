@@ -1,11 +1,11 @@
 package com.guardian
 
-import Config.DbType
+import Config.{Channel, DbType}
 import entity._
 import repo.Store
 
 import cats.data.EitherT
-import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId, toTraverseOps}
+import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
 import com.nasdaq.ouchitch.itch.impl.ItchMessageFactorySet
 import genium.trading.itch42.messages._
 import monix.eval.Task
@@ -13,6 +13,7 @@ import monix.execution.Scheduler
 import monix.kafka.config.AutoOffsetReset
 import monix.kafka.{KafkaConsumerConfig, KafkaConsumerObservable}
 import monix.reactive.Observable
+import org.apache.logging.log4j.scala.Logging
 
 import java.nio.ByteBuffer
 
@@ -20,10 +21,12 @@ import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.language.postfixOps
 
-case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: Store) {
+case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: Store) extends Logging {
   implicit val scheduler: Scheduler = monix.execution.Scheduler.global
 
-  private val messageFactory = new ItchMessageFactorySet()
+  private val messageFactory  = new ItchMessageFactorySet()
+  val channel: Config.Channel = store.channel
+
   private val observable: Observable[Either[AppError, Unit]] =
     KafkaConsumerObservable[Array[Byte], Array[Byte]](consumerConfig, List(topic))
       .take(10000)
@@ -32,6 +35,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
         case (seq, bytes) =>
           for {
             now <- Task.now(Micro(System.currentTimeMillis() * 1000))
+            _   <- Task.now(logger.info(seq.toString))
             msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
             res <- msg match {
               case a: SecondsMessage => store.saveSecond(a.getSeconds)
@@ -40,33 +44,45 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                 (for {
                   msc <- EitherT(store.getSecond)
                   mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
-                  _ <- EitherT(
-                    store.saveTradableInstrument(
-                      OrderbookId(a.getOrderBookId),
-                      Instrument(a.getSymbol),
-                      secType = new String(a.getFinancialProduct), // both
-                      secDesc = new String(a.getLongName),         //
-                      allowShortSell = a.getAllowShortSell,
-                      allowNVDR = a.getAllowNvdr,
-                      allowShortSellOnNVDR = a.getAllowShortSellOnNvdr,
-                      allowTTF = a.getAllowTtf,
-                      isValidForTrading = a.getStatus,
-                      lotRoundSize = a.getRoundLotSize,
-                      parValue = a.getParValue,
-                      sectorNumber = new String(a.getSectorCode),
-                      underlyingSecCode = a.getUnderlying, // or underlyingOrderbookId
-                      underlyingSecName = new String(a.getUnderlyingName),
-                      maturityDate = a.getExpirationDate, // YYYYMMDD
-                      contractMultiplier = a.getContractSize,
-                      settlMethod = "NA",
-                      marketTs = mms
-                    )
-                  )
-                } yield ()).value
+                  res <-
+                    if (channel == Channel.fu && a.getMarketCode == 11) { // block underlyings in futures
+                      EitherT.rightT[Task, AppError](())
+                    }
+                    else {
+                      EitherT(
+                        store.saveTradableInstrument(
+                          OrderbookId(a.getOrderBookId),
+                          Instrument(a.getSymbol),
+                          secType = new String(a.getFinancialProduct), // both
+                          secDesc = new String(a.getLongName),
+                          allowShortSell = a.getAllowShortSell,
+                          allowNVDR = a.getAllowNvdr,
+                          allowShortSellOnNVDR = a.getAllowShortSellOnNvdr,
+                          allowTTF = a.getAllowTtf,
+                          isValidForTrading = a.getStatus,
+                          lotRoundSize = a.getRoundLotSize,
+                          parValue = a.getParValue,
+                          sectorNumber = new String(a.getSectorCode),
+                          underlyingSecCode = a.getUnderlying, // or underlyingOrderbookId
+                          underlyingSecName = new String(a.getUnderlyingName),
+                          maturityDate = a.getExpirationDate, // YYYYMMDD
+                          contractMultiplier = a.getContractSize,
+                          settlMethod = "NA",
+                          marketTs = mms
+                        )
+                      )
+                    }
+                } yield ())
+                  .recoverWith(p => {
+                    logger.info(p.msg)
+                    EitherT.rightT[Task, AppError](())
+                  })
+                  .value
 
               case a: MarketByPriceMessage =>
                 (for {
-                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  _ = logger.info(oid.toString)
                   symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
@@ -83,13 +99,14 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                           qty = Qty(p.getQuantity),
                           level = p.getLevel,
                           side = Side(p.getSide),
-                          levelUpdateAction = p.getLevelUpdateAction,
+                          levelUpdateAction = p.getLevelUpdateAction.asInstanceOf[Char],
                           numDeletes = p.getNumberOfDeletes
                         )
                       )
                       .toVector
                   )
-                  _ <- EitherT.right[AppError](acts.map(p => store.updateOrderbook(seq, oid, p)).sequence)
+                  _ = logger.info(acts)
+                  _ <- EitherT.right[AppError](store.updateOrderbook(seq, oid, acts))
                 } yield ()).value
 
               case a: TradeTickerMessageSet =>
@@ -219,7 +236,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
   private val pConsumer: monix.reactive.Consumer[Either[AppError, Unit], Unit] = monix.reactive.Consumer.complete
   def run: Task[Unit] =
     for {
-      _ <- observable.consumeWith(pConsumer)
+      a <- observable.consumeWith(pConsumer)
       _ <- run
     } yield ()
 
@@ -228,19 +245,20 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
 object Consumer {
 
-  def setup(config: Config, groupId: String): Consumer = {
+  def setup(config: Config): Consumer = {
     val store = config.dbType match {
       case DbType.redis => Store.redis(config.channel, config.redisConfig)
       case DbType.mysql => Store.mysql(config.channel, config.mySqlConfig)
     }
+    val groupId = config.kafkaConfig.topic.getOrElse(config.genGroupID)
     val consumerCfg = KafkaConsumerConfig.default.copy(
       bootstrapServers = List(config.kafkaConfig.server),
       groupId = groupId,
       autoOffsetReset = AutoOffsetReset.Earliest, // the starting offset when there is no offset
-      maxPollInterval = 10 minute
+      maxPollInterval = 30 minutes
       // you can use this settings for At Most Once semantics:
       //     observableCommitOrder = ObservableCommitOrder.BeforeAck
     )
-    new Consumer(consumerConfig = consumerCfg, topic = config.kafkaConfig.topic, store = store)
+    new Consumer(consumerConfig = consumerCfg, topic = groupId, store = store)
   }
 }

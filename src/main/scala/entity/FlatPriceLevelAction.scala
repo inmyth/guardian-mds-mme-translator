@@ -13,7 +13,7 @@ case class FlatPriceLevelAction(
     qty: Qty,
     level: Byte,
     side: Side,
-    levelUpdateAction: Byte,
+    levelUpdateAction: Char,
     numDeletes: Byte
 )
 
@@ -37,7 +37,7 @@ object FlatPriceLevelAction {
       qty = Qty(item.getQuantity),
       level = item.getLevel,
       side = Side(item.getSide),
-      levelUpdateAction = item.getLevelUpdateAction,
+      levelUpdateAction = item.getLevelUpdateAction.asInstanceOf[Char],
       numDeletes = item.getNumberOfDeletes
     )
 }

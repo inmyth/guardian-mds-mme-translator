@@ -2,7 +2,7 @@ channel = eq
 db-type = "redis"
 kafka-config = {
   server = "172.21.252.175:9092"
-  topic = "topic_from_receiver"
+  topic = "[optional]topic_from_receiver_or_(set_or_tfex)-(dbtype)"
 }
 redis-config = {
   host = "localhost"

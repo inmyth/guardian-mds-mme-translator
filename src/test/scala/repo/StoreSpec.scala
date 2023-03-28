@@ -18,7 +18,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
     "updateOrderbook" when {
       "N" in {
         (for {
-          _    <- store.updateOrderbook(seq, oid, action.copy(levelUpdateAction = 'N'))
+          _    <- store.updateOrderbook(seq, oid, Vector(action.copy(levelUpdateAction = 'N')))
           last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
@@ -40,7 +40,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
           _ <- store.updateOrderbook(
             seq,
             oid,
-            action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U')
+            Vector(action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U'))
           )
           last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>
@@ -63,7 +63,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
           _ <- store.updateOrderbook(
             seq,
             oid,
-            action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3)
+            Vector(action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3))
           )
           last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>

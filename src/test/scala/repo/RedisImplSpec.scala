@@ -3,8 +3,9 @@ package repo
 
 import Config.RedisConfig
 import Fixtures._
-import entity.{Micro, Qty}
+import entity.{Instrument, Micro, OrderbookId, Qty}
 
+import com.guardian.AppError.SymbolNotFound
 import io.lettuce.core.api.sync.RedisCommands
 import io.lettuce.core.{Limit, Range}
 import monix.eval.Task
@@ -66,7 +67,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
     "updateOrderbook" when {
       "N" in {
         (for {
-          _    <- store.updateOrderbook(seq, oid, action.copy(levelUpdateAction = 'N'))
+          _    <- store.updateOrderbook(seq, oid, List(action.copy(levelUpdateAction = 'N')))
           last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
@@ -88,7 +89,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           _ <- store.updateOrderbook(
             seq,
             oid,
-            action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U')
+            List(action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U'))
           )
           last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>
@@ -111,7 +112,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           _ <- store.updateOrderbook(
             seq,
             oid,
-            action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3)
+            List(action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3))
           )
           last <- store.getLastOrderbookItem(symbol)
         } yield last).runToFuture.map(p =>
@@ -271,6 +272,26 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
         kliSz <- Task(com.get.xrevrange(kliKey, Range.create("-", "+"), Limit.create(0, 1)).asScala.size)
         marSz <- Task(com.get.xrevrange(marKey, Range.create("-", "+"), Limit.create(0, 1)).asScala.size)
       } yield (prjId, kliSz, marSz)).runToFuture.map(_ shouldBe (seq, 1, 1))
+    }
+    "getInstrument" when {
+      "symbol exists" should {
+        "return right" in {
+          (for {
+            res <- store.getInstrument(orderbookId = oid)
+          } yield res).runToFuture.map(
+            _ shouldBe Right(symbol)
+          )
+        }
+      }
+      "no symbol exists" should {
+        "return Left" in {
+          (for {
+            res <- store.getInstrument(orderbookId = OrderbookId(-1))
+          } yield res).runToFuture.map(
+            _ shouldBe Left(SymbolNotFound(OrderbookId(-1)))
+          )
+        }
+      }
     }
   }
 }

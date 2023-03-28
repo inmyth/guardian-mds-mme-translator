@@ -2,7 +2,7 @@ package com.guardian
 package repo
 
 import AppError.{RedisConnectionError, SecondNotFound, SymbolNotFound}
-import Config.Channel
+import Config.{Channel, DbType}
 import entity.{Instrument, Micro, OrderbookId, Price, Price8, Qty}
 
 import cats.data.EitherT
@@ -17,7 +17,7 @@ import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsJava, MapHa
 import scala.util.matching.Regex
 import scala.util.{Failure, Success, Try}
 
-class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
+class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, DbType.redis) {
   private var connection: Option[StatefulRedisConnection[String, String]] = Option.empty
   private var commands: Option[RedisCommands[String, String]]             = Option.empty
 
@@ -77,7 +77,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
       maturityDate: Int,
       contractMultiplier: Int,
       settlMethod: String,
-      marketTs: Micro
+      marketTs: Micro,
   ): Task[Either[AppError, Unit]] =
     (for {
       _ <- EitherT.rightT[Task, AppError](commands.get.hset(keyTradableInstrument, oid.value.toString, symbol.value))

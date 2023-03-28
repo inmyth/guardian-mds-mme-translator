@@ -10,16 +10,14 @@ case class Config(
     redisConfig: RedisConfig,
     mySqlConfig: MySqlConfig,
     channel: Channel,
-    dbType: DbType,
-    groupIdSuffixOverride: Option[String]
+    dbType: DbType
 ) {
 
   def genGroupID: String = {
-    val x = channel match {
-      case Channel.eq => s"eq-${dbType.toString}"
-      case Channel.fu => s"fu-${dbType.toString}"
+    channel match {
+      case Channel.eq => s"set-${dbType.toString}"
+      case Channel.fu => s"tfex-${dbType.toString}"
     }
-    x + groupIdSuffixOverride.flatMap(p => Option(p).filter(_.trim.nonEmpty)).map(p => s"-$p").getOrElse("")
   }
 }
 
@@ -27,7 +25,7 @@ object Config {
   implicit val channelConvert: ConfigReader[Channel] = deriveEnumerationReader[Channel]
   implicit val dbTypeConvert: ConfigReader[DbType]   = deriveEnumerationReader[DbType]
 
-  case class KafkaConfig(server: String, topic: String)
+  case class KafkaConfig(server: String, topic: Option[String])
 
   case class RedisConfig(host: String, port: Int, password: Option[String])
 
@@ -35,7 +33,7 @@ object Config {
       host: String,
       port: Int,
       user: Option[String],
-      password: Option[String],
+      password: Option[String]
   )
 
   sealed trait Channel
