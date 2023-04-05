@@ -63,7 +63,7 @@ class OrderbookItemSpec extends AsyncWordSpec with Matchers {
         val serverTs = Micro(1675752890L)
         val actual   = orderbookItem.update(side, level, newPrice, newQty, serverTs)
         val expected = bids.updated(1, Some((newPrice, newQty, serverTs)))
-        actual shouldBe expected
+        actual shouldBe Right(expected)
       }
     }
   }

@@ -86,7 +86,7 @@ abstract class Store(val channel: Channel, dbType: DbType) {
         else {
           EitherT.rightT[Task, AppError](OrderbookItem.empty(item.maxLevel))
         }
-      nuPriceLevels <- EitherT.rightT[Task, AppError](buildPriceLevels(lastItem, item))
+      nuPriceLevels <- EitherT.fromEither[Task](buildPriceLevels(lastItem, item))
       update <- EitherT.rightT[Task, AppError](
         OrderbookItem.reconstruct(
           nuPriceLevels,
@@ -118,15 +118,19 @@ abstract class Store(val channel: Channel, dbType: DbType) {
       update <- EitherT.rightT[Task, AppError](items.indices.foldLeft(start)((cur, index) => {
         val item          = items(index)
         val nuPriceLevels = buildPriceLevels(cur, item)
-        OrderbookItem.reconstruct(
-          nuPriceLevels,
-          side = item.side.value,
-          seq = seq,
-          maxLevel = item.maxLevel,
-          marketTs = item.marketTs,
-          bananaTs = item.bananaTs,
-          origin = cur
-        )
+        if (nuPriceLevels.isLeft) {
+          cur
+        } else {
+          OrderbookItem.reconstruct(
+            nuPriceLevels.toOption.get,
+            side = item.side.value,
+            seq = seq,
+            maxLevel = item.maxLevel,
+            marketTs = item.marketTs,
+            bananaTs = item.bananaTs,
+            origin = cur
+          )
+        }
       }))
     } yield update).value
 
@@ -526,10 +530,13 @@ object InMemImpl {
 
 object Store {
 
-  def buildPriceLevels(base: OrderbookItem, item: FlatPriceLevelAction): Seq[Option[(Price, Qty, Micro)]] =
+  def buildPriceLevels(
+      base: OrderbookItem,
+      item: FlatPriceLevelAction
+  ): Either[AppError, Seq[Option[(Price, Qty, Micro)]]] =
     item.levelUpdateAction match {
-      case 'N' => base.insert(item.price, item.qty, item.marketTs, item.level, item.side)
-      case 'D' => base.delete(side = item.side, level = item.level, numDeletes = item.numDeletes)
+      case 'N' => base.insert(item.price, item.qty, item.marketTs, item.level, item.side).asRight
+      case 'D' => base.delete(side = item.side, level = item.level, numDeletes = item.numDeletes).asRight
       case _ =>
         base.update(side = item.side, level = item.level, price = item.price, qty = item.qty, marketTs = item.marketTs)
     }

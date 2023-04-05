@@ -3,6 +3,9 @@ package repo
 
 import entity.{Micro, Price, Qty, Side}
 
+import cats.implicits.catsSyntaxEitherId
+import com.guardian.AppError.OrderbookUpdateError
+
 private[repo] case class OrderbookItem(
     seq: Long,
     maxLevel: Int,
@@ -35,13 +38,24 @@ private[repo] case class OrderbookItem(
     res.dropRight(res.size - maxLevel)
   }
 
-  def update(side: Side, level: Int, price: Price, qty: Qty, marketTs: Micro): Seq[Option[(Price, Qty, Micro)]] = {
+  def update(
+      side: Side,
+      level: Int,
+      price: Price,
+      qty: Qty,
+      marketTs: Micro
+  ): Either[AppError, Seq[Option[(Price, Qty, Micro)]]] = {
     val index = level - 1
     val current = side.value.toChar match {
       case 'B' => bids
       case _   => asks
     }
-    current.updated(index, Some(price, qty, marketTs))
+    if (level > current.size) {
+      OrderbookUpdateError(level, current.size).asLeft
+    }
+    else {
+      current.updated(index, Some(price, qty, marketTs)).asRight
+    }
   }
 }
 

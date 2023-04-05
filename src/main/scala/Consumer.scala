@@ -33,9 +33,9 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
       .map(p => (new String(p.key()).toLong, p.value()))
       .mapEval {
         case (seq, bytes) =>
-          for {
+          (for {
             now <- Task.now(Micro(System.currentTimeMillis() * 1000))
-            _   <- Task.now(logger.info(seq.toString))
+            _ <- Task.now(logger.info(seq.toString))
             msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
             res <- msg match {
               case a: SecondsMessage => store.saveSecond(a.getSeconds)
@@ -84,8 +84,8 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   _ = logger.info(oid.toString)
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc    <- EitherT(store.getSecond)
-                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc <- EitherT(store.getSecond)
+                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   acts <- EitherT.rightT[Task, AppError](
                     a.getItems.asScala
                       .map(p =>
@@ -111,10 +111,10 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: TradeTickerMessageSet =>
                 (for {
-                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc    <- EitherT(store.getSecond)
-                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc <- EitherT(store.getSecond)
+                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateTicker(
                       oid = oid,
@@ -135,10 +135,10 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: EquilibriumPriceMessage =>
                 (for {
-                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc    <- EitherT(store.getSecond)
-                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc <- EitherT(store.getSecond)
+                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   matchedVol <- EitherT.rightT[Task, AppError](
                     Qty(if (a.getAskQuantity < a.getBidQuantity) a.getAskQuantity else a.getBidQuantity)
                   )
@@ -159,10 +159,10 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: TradeStatisticsMessageSet =>
                 (for {
-                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc    <- EitherT(store.getSecond)
-                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc <- EitherT(store.getSecond)
+                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateKline(
                       oid = oid,
@@ -183,10 +183,10 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: IndexPriceMessageSet =>
                 (for {
-                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc    <- EitherT(store.getSecond)
-                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc <- EitherT(store.getSecond)
+                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateMarketStats(
                       oid = oid,
@@ -230,13 +230,19 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case _ => ().asRight.pure[Task]
             }
-          } yield res
+          } yield res).map {
+            case Left(e) =>
+              logger.error(s"Seq: $seq, ${e.msg}")
+              ().asRight
+            case Right(value) =>
+              ().asRight
+          }
       }
 
   private val pConsumer: monix.reactive.Consumer[Either[AppError, Unit], Unit] = monix.reactive.Consumer.complete
   def run: Task[Unit] =
     for {
-      a <- observable.consumeWith(pConsumer)
+      _ <- observable.consumeWith(pConsumer)
       _ <- run
     } yield ()
 
