@@ -7,12 +7,13 @@ import entity._
 import repo.InMemImpl.{KlineItem, MarketStatsItem, ProjectedItem, TickerItem}
 
 import cats.data.EitherT
-import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId, toTraverseOps}
+import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId, toBifunctorOps, toTraverseOps}
 import com.github.jasync.sql.db.mysql.MySQLConnectionBuilder
 import io.lettuce.core.RedisClient
 import monix.eval.Task
+import org.apache.logging.log4j.scala.Logging
 
-abstract class Store(val channel: Channel, dbType: DbType) {
+abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
   import Store._
 
   val keyTradableInstrument                = s"${channel.toString}:symbol_reference"
@@ -67,6 +68,7 @@ abstract class Store(val channel: Channel, dbType: DbType) {
             ref       <- EitherT.rightT[Task, AppError](acts.head)
             maybeItem <- EitherT(getLastOrderbookItem(ref.symbol))
             update    <- EitherT(updateOrderbookAggregate(seq, maybeItem, acts))
+            _         <- EitherT.rightT[Task, AppError](logger.info(update.toString))
             _         <- EitherT(saveOrderbookItem(ref.symbol, orderbookId, update))
           } yield ()
       }
@@ -119,8 +121,16 @@ abstract class Store(val channel: Channel, dbType: DbType) {
         val item          = items(index)
         val nuPriceLevels = buildPriceLevels(cur, item)
         if (nuPriceLevels.isLeft) {
-          cur
-        } else {
+          // THIS MODIFICATION IS ONLY TO AVOID DUPLICATE ENTRIES, IT SHOULD ONLY BE cur
+          val m = nuPriceLevels.swap.map(p =>
+            s"""
+               |${p.msg}
+               |$item
+               |""".stripMargin).getOrElse("Duplicate error")
+          logger.error(m)
+          cur.copy(seq = seq)
+        }
+        else {
           OrderbookItem.reconstruct(
             nuPriceLevels.toOption.get,
             side = item.side.value,

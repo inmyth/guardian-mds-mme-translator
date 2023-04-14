@@ -10,6 +10,7 @@ import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
 import com.github.jasync.sql.db.Connection
 import com.github.jasync.sql.db.general.ArrayRowData
 import monix.eval.Task
+import org.apache.logging.log4j.scala.Logging
 
 import java.lang
 import java.sql.Date
@@ -19,7 +20,7 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.javaapi.FutureConverters
 import scala.util.Try
 
-class MySQLImpl(channel: Channel, val connection: Connection) extends Store(channel, DbType.mysql) {
+class MySQLImpl(channel: Channel, val connection: Connection) extends Store(channel, DbType.mysql) with Logging {
   import MySQLImpl._
   private var marketSecondDb: Option[Int] = None
   private val t1230                       = LocalTime.parse("12:30")
@@ -365,7 +366,17 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           asks.map(_._1.value) ++ asks.map(_._2.value)
       }
       _ <- EitherT.right[AppError](
-        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+        Task
+          .fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+          .onErrorRecoverWith {
+            case e =>
+              logger.error(s"""
+               |$e
+               |$sql
+               |$params
+               |""".stripMargin)
+              Task(())
+          }
       )
     } yield ()).value
 
