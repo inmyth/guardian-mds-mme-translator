@@ -50,7 +50,7 @@ private[repo] case class OrderbookItem(
       case 'B' => bids
       case _   => asks
     }
-    if (index >= current.size) {
+    if (index > current.size - 1) {
       OrderbookUpdateError(level, current.size).asLeft
     }
     else {
