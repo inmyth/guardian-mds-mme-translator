@@ -112,6 +112,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   private val cMaturityDate         = "MaturityDate"
   private val cContractMultiplier   = "ContractMultiplier"
   private val cSettlMethod          = "SettlMethod"
+  private val cDecimalsInPrice      = "DecimalsInPrice"
   private val dateFromMessageFmt    = new java.text.SimpleDateFormat("yyyyMMDD")
   private val dateToSqlFmt          = new java.text.SimpleDateFormat("yyyy-MM-dd")
 
@@ -133,6 +134,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       maturityDate: Int,
       contractMultiplier: Int,
       settlMethod: String,
+      decimalsInPrice: Short,
       marketTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
@@ -143,22 +145,23 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               |INSERT INTO $tradableInstrumentTable
               |($cSecCode, $cSecName, $cSecType, $cSecDesc, $cAllowShortSell, $cAllowNVDR,
               |$cAllowShortSellOnNVDR, $cAllowTTF, $cIsValidForTrading,
-              |$cIsOddLot, $cParValue, $cSectorNumber, $cTradeDate
-              |) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+              |$cIsOddLot, $cParValue, $cSectorNumber, $cDecimalsInPrice, $cTradeDate
+              |) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
               |ON DUPLICATE KEY UPDATE
               |$cSecName=?, $cSecType=?, $cSecDesc=?, $cAllowShortSell=?, $cAllowNVDR=?,
               |$cAllowShortSellOnNVDR=?, $cAllowTTF=?, $cIsValidForTrading=?,
-              |$cIsOddLot=?, $cParValue=?, $cSectorNumber=?, $cTradeDate=?
+              |$cIsOddLot=?, $cParValue=?, $cSectorNumber=?, $cDecimalsInPrice=?, $cTradeDate=?
               |""".stripMargin
           case Channel.fu =>
             s"""
               |INSERT INTO $tradableInstrumentTable
               |($cSecCode, $cSecName, $cSecType, $cSecDesc,
-              |$cUnderlyingSecCode, $cUnderlyingSecName, $cMaturityDate, $cContractMultiplier, $cSettlMethod, $cTradeDate
-              |) VALUES(?,?,?,?,?,?,?,?,?,?)
+              |$cUnderlyingSecCode, $cUnderlyingSecName, $cMaturityDate, $cContractMultiplier, $cSettlMethod,
+              |$cDecimalsInPrice, $cTradeDate
+              |) VALUES(?,?,?,?,?,?,?,?,?,?,?)
               |ON DUPLICATE KEY UPDATE
               |$cSecName=?, $cSecType=?, $cSecDesc=?, $cUnderlyingSecCode=?, $cUnderlyingSecName=?,
-              |$cMaturityDate=?, $cContractMultiplier=?, $cSettlMethod=?, $cTradeDate=?
+              |$cMaturityDate=?, $cContractMultiplier=?, $cSettlMethod=?, $cDecimalsInPrice=?, $cTradeDate=?
               |""".stripMargin
         }
       }
@@ -181,8 +184,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
                 if (lotRoundSize == 1) "Y" else "N",
                 parValue,
                 sectorNumber,
+                decimalsInPrice,
                 microToSqlDateTime(marketTs),
-                // Insert ends here, update startds here
+                // Insert ends here, update starts here
                 secName,
                 secType,
                 secDesc,
@@ -194,6 +198,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
                 if (lotRoundSize == 1) "Y" else "N",
                 parValue,
                 sectorNumber,
+                decimalsInPrice,
                 microToSqlDateTime(marketTs)
               )
             )
@@ -214,6 +219,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
                 maturityDateSql,
                 contractMultiplier,
                 settlMethod,
+                decimalsInPrice,
                 microToSqlDateTime(marketTs),
                 // Insert ends here, update starts here
                 secName,
@@ -224,6 +230,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
                 maturityDateSql,
                 contractMultiplier,
                 settlMethod,
+                decimalsInPrice,
                 microToSqlDateTime(marketTs)
               )
             } yield res
@@ -257,7 +264,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       )
     } yield res).value
 
-  override def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]] =
+  override def getLastOrderbookItem(symbol: Instrument, decimalsInPrice: Short): Task[Either[AppError, Option[OrderbookItem]]] =
     (for {
       sql <- EitherT.rightT[Task, AppError](
         s"""
@@ -279,7 +286,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
             val marketTs = fromSqlDateToMicro(p, cSourceTime)
             val asks = (1 to maxLevel)
               .map(i => {
-                val maybePx  = Option(p.getInt(cOrderBookMDAskPrice(i)))
+                val maybePx  = Option(p.getFloat(cOrderBookMDAskPrice(i))).map(p => Store.floatToInt(p, decimalsInPrice))
                 val maybeQty = Option(p.getLong(cOrderBookMDAskSize(i)))
                 (maybePx, maybeQty) match {
                   case (None, None) => None
@@ -289,7 +296,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               .filter(_.isDefined)
             val bids = (1 to maxLevel)
               .map(i => {
-                val maybePx  = Option(p.getInt(cOrderBookMDBidPrice(i)))
+                val maybePx  = Option(p.getFloat(cOrderBookMDBidPrice(i))).map(p => Store.floatToInt(p, decimalsInPrice))
                 val maybeQty = Option(p.getLong(cOrderBookMDBidSize(i)))
                 (maybePx, maybeQty) match {
                   case (None, None) => None
@@ -313,7 +320,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   override def saveOrderbookItem(
       symbol: Instrument,
       orderbookId: OrderbookId,
-      item: OrderbookItem
+      item: OrderbookItem,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
     (for {
       asks <- EitherT.rightT[Task, AppError](item.asks.filter(_.isDefined).map(_.get))
@@ -362,8 +370,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         val sourceTime    = microToSqlDateTime(item.marketTs).toString
         val receivingTime = microToSqlDateTime(item.bananaTs).toString
         Vector(sourceTime, sourceTime, receivingTime, item.seq, orderbookId.value, symbol.value) ++
-          bids.map(_._1.value) ++ bids.map(_._2.value) ++
-          asks.map(_._1.value) ++ asks.map(_._2.value)
+          bids.map(p => Store.intToFloat(p._1.value, decimalsInPrice)) ++ bids.map(_._2.value) ++
+          asks.map(p => Store.intToFloat(p._1.value, decimalsInPrice)) ++ asks.map(_._2.value)
       }
       _ <- EitherT.right[AppError](
         Task
@@ -1108,6 +1116,27 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       }
     } yield ()).value
 
+  override def saveDecimalsInPrice(oid: OrderbookId, d: Short): Task[Either[AppError, Unit]] = ().asRight.pure[Task]
+
+  override def getDecimalsInPrice(oid: OrderbookId): Task[Either[AppError, Short]] =
+    (for {
+      sql <- EitherT.rightT[Task, AppError](
+        s"""
+         |SELECT $cDecimalsInPrice FROM $tradableInstrumentTable WHERE
+         |$cSecCode=${oid.value.toString};
+         |""".stripMargin
+      )
+      data <- EitherT.right[AppError](Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql))))
+      res <- EitherT.rightT[Task, AppError](
+        data.getRows
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => p.get(cDecimalsInPrice).asInstanceOf[Short])
+          .headOption
+          .getOrElse(1.asInstanceOf[Short])
+      )
+    } yield res).value
+
   def createTables(): Task[Either[AppError, Unit]] =
     (for {
       sch <- EitherT.rightT[Task, AppError](s"""
@@ -1128,6 +1157,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cParValue bigint NULL,
            |  $cIPOPrice int NULL,
            |  $cSectorNumber varchar(20) NULL,
+           |  $cDecimalsInPrice smallint DEFAULT 1,
            |  $cTradeDate datetime(6) NULL,
            |  PRIMARY KEY ($cSecCode)
            |);
@@ -1143,6 +1173,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cMaturityDate datetime (6) NULL,
            |  $cContractMultiplier decimal(14, 6) NULL,
            |  $cSettlMethod varchar (20) NULL,
+           |  $cDecimalsInPrice smallint DEFAULT 1,
            |  $cTradeDate datetime (6) NULL,
            |  PRIMARY KEY ($cSecCode)
            |);
@@ -1156,9 +1187,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cSeqNo bigint NOT NULL,
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar (20) NULL,
-           |  ${(1 to 10).map(i => s"${cOrderBookMDAskPrice(i)} int NULL").mkString(",")},
+           |  ${(1 to 10).map(i => s"${cOrderBookMDAskPrice(i)} float NULL").mkString(",")},
            |  ${(1 to 10).map(i => s"${cOrderBookMDAskSize(i)} bigint NULL").mkString(",")},
-           |  ${(1 to 10).map(i => s"${cOrderBookMDBidPrice(i)} int NULL").mkString(",")},
+           |  ${(1 to 10).map(i => s"${cOrderBookMDBidPrice(i)} float NULL").mkString(",")},
            |  ${(1 to 10).map(i => s"${cOrderBookMDBidSize(i)} bigint NULL").mkString(",")},
            |  CONSTRAINT PK_MDS_EquityOrderBook PRIMARY KEY CLUSTERED
            |  (
@@ -1177,9 +1208,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cSeqNo bigint NOT NULL,
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar (20) NULL,
-           |  ${(1 to 5).map(i => s"${cOrderBookMDAskPrice(i)} int NULL").mkString(",")},
+           |  ${(1 to 5).map(i => s"${cOrderBookMDAskPrice(i)} float NULL").mkString(",")},
            |  ${(1 to 5).map(i => s"${cOrderBookMDAskSize(i)} bigint NULL").mkString(",")},
-           |  ${(1 to 5).map(i => s"${cOrderBookMDBidPrice(i)} int NULL").mkString(",")},
+           |  ${(1 to 5).map(i => s"${cOrderBookMDBidPrice(i)} float NULL").mkString(",")},
            |  ${(1 to 5).map(i => s"${cOrderBookMDBidSize(i)} bigint NULL").mkString(",")},
            |  CONSTRAINT PK_MDS_DerivativeOrderBook PRIMARY KEY CLUSTERED
            |  (

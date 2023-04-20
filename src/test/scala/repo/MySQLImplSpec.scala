@@ -33,7 +33,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
     }
     "eq" when {
       val store = storeEq
-      "saveTradableInstrument, getInstrument" should {
+      "saveTradableInstrument, getInstrument, getDecimalsInPrice" should {
         "save the instrument along with other data and get it back" in {
           (for {
             _ <- store.saveTradableInstrument(
@@ -54,10 +54,16 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               maturityDate = maturityDate,
               contractMultiplier = contractMultiplier,
               settlMethod = settlMethod,
+              decimalsInPrice = decimalsInPrice,
               marketTs = marketTs
             )
             sym <- store.getInstrument(oid)
           } yield sym).runToFuture.map(_ shouldBe Right(symbol))
+        }
+        "return decimalsInPrice" in {
+          (for {
+            p <- store.getDecimalsInPrice(oid)
+          } yield p).runToFuture.map(_ shouldBe Right(decimalsInPrice))
         }
       }
       "updateOrderbook" when {
@@ -65,8 +71,8 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
           "N" should {
             "insert new level without the ask/bid time" in {
               (for {
-                _ <- store.updateOrderbook(seq, oid, List(action.copy(levelUpdateAction = 'N')))
-                a <- store.getLastOrderbookItem(symbol)
+                _ <- store.updateOrderbook(seq, oid, List(action.copy(levelUpdateAction = 'N')), decimalsInPrice)
+                a <- store.getLastOrderbookItem(symbol, decimalsInPrice)
                 _ <- store.updateOrderbook(
                   seq,
                   oid,
@@ -79,9 +85,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                         qty = bidQty1,
                         marketTs = bidTime1
                       )
-                  )
+                  ),
+                  decimalsInPrice
                 )
-                b <- store.getLastOrderbookItem(symbol)
+                b <- store.getLastOrderbookItem(symbol, decimalsInPrice)
               } yield (a, b)).runToFuture.map(p =>
                 p shouldBe (Right(
                   Some(
@@ -124,9 +131,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                       side = Side('B'),
                       levelUpdateAction = 'U'
                     )
-                  )
+                  ),
+                  decimalsInPrice
                 )
-                last <- store.getLastOrderbookItem(symbol)
+                last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
               } yield last).runToFuture.map(p =>
                 p shouldBe Right(
                   Some(
@@ -152,9 +160,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                   List(
                     action
                       .copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', side = Side('B'), marketTs = bidTime3)
-                  )
+                  ),
+                  decimalsInPrice
                 )
-                last <- store.getLastOrderbookItem(symbol)
+                last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
               } yield last).runToFuture.map(p =>
                 p shouldBe Right(
                   Some(
@@ -213,9 +222,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                       side = Side('B'),
                       marketTs = bidTime8
                     )
-                )
+                ),
+                decimalsInPrice
               )
-              a <- store.getLastOrderbookItem(symbol)
+              a <- store.getLastOrderbookItem(symbol, decimalsInPrice)
             } yield a).runToFuture.map(p =>
               p shouldBe Right(
                 Some(
@@ -432,9 +442,9 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
       "updateMySqlIPOPrice" should {
         "update the ipo price of an instrument in tradable instrument table" in {
           (for {
-            _   <- store.updateMySqlIPOPrice(oid, Price(100))
+            _   <- store.updateMySqlIPOPrice(oid, Price(10000))
             res <- getIPOPrice(store, oid)
-          } yield res).runToFuture.map(_ shouldBe Price(100))
+          } yield res).runToFuture.map(_ shouldBe Price(10000))
         }
       }
       "updateKline (updateEquityDay)" should {
@@ -693,6 +703,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               maturityDate = maturityDate,
               contractMultiplier = contractMultiplier,
               settlMethod = settlMethod,
+              decimalsInPrice = decimalsInPrice,
               marketTs = marketTs
             )
             sym <- store.getInstrument(oid)
@@ -703,8 +714,8 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
         "N" should {
           "insert new level without the ask/bid time" in {
             (for {
-              _ <- store.updateOrderbook(seq, oid, List(action.copy(levelUpdateAction = 'N')))
-              a <- store.getLastOrderbookItem(symbol)
+              _ <- store.updateOrderbook(seq, oid, List(action.copy(levelUpdateAction = 'N')), decimalsInPrice)
+              a <- store.getLastOrderbookItem(symbol, decimalsInPrice)
               _ <- store.updateOrderbook(
                 seq,
                 oid,
@@ -718,9 +729,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                       qty = bidQty1,
                       marketTs = bidTime1
                     )
-                )
+                ),
+                decimalsInPrice
               )
-              b <- store.getLastOrderbookItem(symbol)
+              b <- store.getLastOrderbookItem(symbol, decimalsInPrice)
             } yield (a, b)).runToFuture.map(p =>
               p shouldBe (Right(
                 Some(
@@ -764,9 +776,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                     side = Side('B'),
                     levelUpdateAction = 'U'
                   )
-                )
+                ),
+                decimalsInPrice
               )
-              last <- store.getLastOrderbookItem(symbol)
+              last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
             } yield last).runToFuture.map(p =>
               p shouldBe Right(
                 Some(
@@ -798,9 +811,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                     maxLevel = 5,
                     marketTs = bidTime3
                   )
-                )
+                ),
+                decimalsInPrice
               )
-              last <- store.getLastOrderbookItem(symbol)
+              last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
             } yield last).runToFuture.map(p =>
               p shouldBe Right(
                 Some(

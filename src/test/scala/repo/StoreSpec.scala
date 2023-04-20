@@ -18,8 +18,8 @@ class StoreSpec extends AsyncWordSpec with Matchers {
     "updateOrderbook" when {
       "N" in {
         (for {
-          _    <- store.updateOrderbook(seq, oid, Vector(action.copy(levelUpdateAction = 'N')))
-          last <- store.getLastOrderbookItem(symbol)
+          _    <- store.updateOrderbook(seq, oid, Vector(action.copy(levelUpdateAction = 'N')), decimalsInPrice)
+          last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(
@@ -40,9 +40,10 @@ class StoreSpec extends AsyncWordSpec with Matchers {
           _ <- store.updateOrderbook(
             seq,
             oid,
-            Vector(action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U'))
+            Vector(action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U')),
+            decimalsInPrice
           )
-          last <- store.getLastOrderbookItem(symbol)
+          last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(
@@ -63,9 +64,10 @@ class StoreSpec extends AsyncWordSpec with Matchers {
           _ <- store.updateOrderbook(
             seq,
             oid,
-            Vector(action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3))
+            Vector(action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3)),
+            decimalsInPrice
           )
-          last <- store.getLastOrderbookItem(symbol)
+          last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(
@@ -268,6 +270,14 @@ class StoreSpec extends AsyncWordSpec with Matchers {
           )
         )
       )
+    }
+    "saveDecimalsInPrice, getDecimalsInPrice" should {
+      "save and retrieve decimals in price" in {
+        (for {
+          _ <- store.saveDecimalsInPrice(oid, decimalsInPrice)
+          p <- store.getDecimalsInPrice(oid)
+        } yield p).runToFuture.map(_ shouldBe Right(decimalsInPrice))
+      }
     }
   }
 }

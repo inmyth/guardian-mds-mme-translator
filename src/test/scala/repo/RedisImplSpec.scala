@@ -1,11 +1,11 @@
 package com.guardian
 package repo
 
+import AppError.SymbolNotFound
 import Config.RedisConfig
 import Fixtures._
-import entity.{Instrument, Micro, OrderbookId, Qty}
+import entity.{Micro, OrderbookId, Qty}
 
-import com.guardian.AppError.SymbolNotFound
 import io.lettuce.core.api.sync.RedisCommands
 import io.lettuce.core.{Limit, Range}
 import monix.eval.Task
@@ -50,6 +50,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
             maturityDate = maturityDate,
             contractMultiplier = contractMultiplier,
             settlMethod = settlMethod,
+            decimalsInPrice = decimalsInPrice,
             marketTs: Micro
           )
           symbol <- store.getInstrument(oid)
@@ -64,11 +65,19 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
         } yield res).runToFuture.map(_ shouldBe Right(second))
       }
     }
+    "saveDecimalsInPrice, getDecimalsInPrice" should {
+      "save decimals in price and retrieve it" in {
+        (for {
+          _   <- store.saveDecimalsInPrice(oid, decimalsInPrice)
+          res <- store.getDecimalsInPrice(oid)
+        } yield res).runToFuture.map(_ shouldBe Right(decimalsInPrice))
+      }
+    }
     "updateOrderbook" when {
       "N" in {
         (for {
-          _    <- store.updateOrderbook(seq, oid, List(action.copy(levelUpdateAction = 'N')))
-          last <- store.getLastOrderbookItem(symbol)
+          _    <- store.updateOrderbook(seq, oid, List(action.copy(levelUpdateAction = 'N')), decimalsInPrice)
+          last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(
@@ -89,9 +98,10 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           _ <- store.updateOrderbook(
             seq,
             oid,
-            List(action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U'))
+            List(action.copy(price = askPrice2, qty = askQty2, marketTs = askTime2, levelUpdateAction = 'U')),
+            decimalsInPrice
           )
-          last <- store.getLastOrderbookItem(symbol)
+          last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(
@@ -112,9 +122,10 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           _ <- store.updateOrderbook(
             seq,
             oid,
-            List(action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3))
+            List(action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3)),
+            decimalsInPrice
           )
-          last <- store.getLastOrderbookItem(symbol)
+          last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
         } yield last).runToFuture.map(p =>
           p shouldBe Right(
             Some(

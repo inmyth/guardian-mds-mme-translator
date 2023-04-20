@@ -35,7 +35,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
         case (seq, bytes) =>
           (for {
             now <- Task.now(Micro(System.currentTimeMillis() * 1000))
-            _ <- Task.now(logger.info(seq.toString))
+            _   <- Task.now(logger.info(seq.toString))
             msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
             res <- msg match {
               case a: SecondsMessage => store.saveSecond(a.getSeconds)
@@ -44,33 +44,38 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                 (for {
                   msc <- EitherT(store.getSecond)
                   mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
-                  res <-
+                  _ <-
                     if (channel == Channel.fu && a.getMarketCode == 11) { // block underlyings in futures
                       EitherT.rightT[Task, AppError](())
                     }
                     else {
-                      EitherT(
-                        store.saveTradableInstrument(
-                          OrderbookId(a.getOrderBookId),
-                          Instrument(a.getSymbol),
-                          secType = new String(a.getFinancialProduct), // both
-                          secDesc = new String(a.getLongName),
-                          allowShortSell = a.getAllowShortSell,
-                          allowNVDR = a.getAllowNvdr,
-                          allowShortSellOnNVDR = a.getAllowShortSellOnNvdr,
-                          allowTTF = a.getAllowTtf,
-                          isValidForTrading = a.getStatus,
-                          lotRoundSize = a.getRoundLotSize,
-                          parValue = a.getParValue,
-                          sectorNumber = new String(a.getSectorCode),
-                          underlyingSecCode = a.getUnderlying, // or underlyingOrderbookId
-                          underlyingSecName = new String(a.getUnderlyingName),
-                          maturityDate = a.getExpirationDate, // YYYYMMDD
-                          contractMultiplier = a.getContractSize,
-                          settlMethod = "NA",
-                          marketTs = mms
+                      for {
+                        oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                        _ <- EitherT(
+                          store.saveTradableInstrument(
+                            oid,
+                            Instrument(a.getSymbol),
+                            secType = new String(a.getFinancialProduct), // both
+                            secDesc = new String(a.getLongName),
+                            allowShortSell = a.getAllowShortSell,
+                            allowNVDR = a.getAllowNvdr,
+                            allowShortSellOnNVDR = a.getAllowShortSellOnNvdr,
+                            allowTTF = a.getAllowTtf,
+                            isValidForTrading = a.getStatus,
+                            lotRoundSize = a.getRoundLotSize,
+                            parValue = a.getParValue,
+                            sectorNumber = new String(a.getSectorCode),
+                            underlyingSecCode = a.getUnderlying, // or underlyingOrderbookId
+                            underlyingSecName = new String(a.getUnderlyingName),
+                            maturityDate = a.getExpirationDate, // YYYYMMDD
+                            contractMultiplier = a.getContractSize,
+                            settlMethod = "NA",
+                            decimalsInPrice = a.getDecimalsInPrice,
+                            marketTs = mms
+                          )
                         )
-                      )
+                        _ <- EitherT(store.saveDecimalsInPrice(oid, a.getDecimalsInPrice))
+                      } yield ()
                     }
                 } yield ())
                   .recoverWith(p => {
@@ -84,8 +89,9 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   _ = logger.info(oid.toString)
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc <- EitherT(store.getSecond)
-                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc    <- EitherT(store.getSecond)
+                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  dec    <- EitherT(store.getDecimalsInPrice(oid))
                   acts <- EitherT.rightT[Task, AppError](
                     a.getItems.asScala
                       .map(p =>
@@ -106,15 +112,15 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       .toVector
                   )
                   _ = logger.info(acts)
-                  _ <- EitherT.right[AppError](store.updateOrderbook(seq, oid, acts))
+                  _ <- EitherT.right[AppError](store.updateOrderbook(seq, oid, acts, dec))
                 } yield ()).value
 
               case a: TradeTickerMessageSet =>
                 (for {
-                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc <- EitherT(store.getSecond)
-                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc    <- EitherT(store.getSecond)
+                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateTicker(
                       oid = oid,
@@ -135,10 +141,10 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: EquilibriumPriceMessage =>
                 (for {
-                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc <- EitherT(store.getSecond)
-                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc    <- EitherT(store.getSecond)
+                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   matchedVol <- EitherT.rightT[Task, AppError](
                     Qty(if (a.getAskQuantity < a.getBidQuantity) a.getAskQuantity else a.getBidQuantity)
                   )
@@ -159,10 +165,10 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: TradeStatisticsMessageSet =>
                 (for {
-                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc <- EitherT(store.getSecond)
-                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc    <- EitherT(store.getSecond)
+                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateKline(
                       oid = oid,
@@ -183,10 +189,10 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: IndexPriceMessageSet =>
                 (for {
-                  oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
                   symbol <- EitherT(store.getInstrument(oid))
-                  msc <- EitherT(store.getSecond)
-                  mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  msc    <- EitherT(store.getSecond)
+                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   _ <- EitherT(
                     store.updateMarketStats(
                       oid = oid,

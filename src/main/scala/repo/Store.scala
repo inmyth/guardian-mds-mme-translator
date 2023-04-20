@@ -23,6 +23,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
   val keyProjected: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
   val keyKlein: Instrument => String       = (symbol: Instrument) => s"${channel.toString}:klein:${symbol.value}"
   val keyMarketStats: Instrument => String = (symbol: Instrument) => s"id:mkt:${symbol.value}"
+  val keyDecimalsInPrice: String           = s"${channel.toString}:decimalsInPrice"
 
   def connect(): Task[Either[AppError, Unit]]
 
@@ -50,6 +51,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       maturityDate: Int,
       contractMultiplier: Int,
       settlMethod: String,
+      decimalsInPrice: Short,
       marketTs: Micro
   ): Task[Either[AppError, Unit]]
   def getInstrument(orderbookId: OrderbookId): Task[Either[AppError, Instrument]]
@@ -57,19 +59,21 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
   def updateOrderbook(
       seq: Long,
       orderbookId: OrderbookId,
-      acts: Seq[FlatPriceLevelAction]
+      acts: Seq[FlatPriceLevelAction],
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
     (for {
       _ <- dbType match {
         case DbType.redis =>
-          EitherT.right[AppError](acts.map(p => updateOrderbookNonAggregate(seq, orderbookId, p)).sequence)
+          EitherT
+            .right[AppError](acts.map(p => updateOrderbookNonAggregate(seq, orderbookId, p, decimalsInPrice)).sequence)
         case DbType.mysql =>
           for {
             ref       <- EitherT.rightT[Task, AppError](acts.head)
-            maybeItem <- EitherT(getLastOrderbookItem(ref.symbol))
+            maybeItem <- EitherT(getLastOrderbookItem(ref.symbol, decimalsInPrice))
             update    <- EitherT(updateOrderbookAggregate(seq, maybeItem, acts))
             _         <- EitherT.rightT[Task, AppError](logger.info(update.toString))
-            _         <- EitherT(saveOrderbookItem(ref.symbol, orderbookId, update))
+            _         <- EitherT(saveOrderbookItem(ref.symbol, orderbookId, update, decimalsInPrice))
           } yield ()
       }
     } yield ()).value
@@ -77,10 +81,11 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
   def updateOrderbookNonAggregate(
       seq: Long,
       orderbookId: OrderbookId,
-      item: FlatPriceLevelAction
+      item: FlatPriceLevelAction,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
     (for {
-      maybeItem <- EitherT(getLastOrderbookItem(item.symbol))
+      maybeItem <- EitherT(getLastOrderbookItem(item.symbol, decimalsInPrice))
       lastItem <-
         if (maybeItem.isDefined) {
           EitherT.rightT[Task, AppError](maybeItem.get)
@@ -100,7 +105,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
           origin = lastItem
         )
       )
-      _ <- EitherT(saveOrderbookItem(item.symbol, orderbookId, update))
+      _ <- EitherT(saveOrderbookItem(item.symbol, orderbookId, update, decimalsInPrice))
     } yield ()).value
 
   def updateOrderbookAggregate(
@@ -122,8 +127,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
         val nuPriceLevels = buildPriceLevels(cur, item)
         if (nuPriceLevels.isLeft) {
           // THIS MODIFICATION IS ONLY TO AVOID DUPLICATE ENTRIES, IT SHOULD ONLY BE cur
-          val m = nuPriceLevels.swap.map(p =>
-            s"""
+          val m = nuPriceLevels.swap.map(p => s"""
                |${p.msg}
                |$item
                |""".stripMargin).getOrElse("Duplicate error")
@@ -144,9 +148,14 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       }))
     } yield update).value
 
-  def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]]
+  def getLastOrderbookItem(symbol: Instrument, decimalsInPrice: Short): Task[Either[AppError, Option[OrderbookItem]]]
 
-  def saveOrderbookItem(symbol: Instrument, orderbookId: OrderbookId, item: OrderbookItem): Task[Either[AppError, Unit]]
+  def saveOrderbookItem(
+      symbol: Instrument,
+      orderbookId: OrderbookId,
+      item: OrderbookItem,
+      decimalsInPrice: Short
+  ): Task[Either[AppError, Unit]]
 
   def getLastTickerTotalQty(symbol: Instrument): Task[Either[AppError, Qty]]
 
@@ -236,6 +245,8 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       settlPrice: Price
   ): Task[Either[AppError, Unit]]
 
+  def saveDecimalsInPrice(oid: OrderbookId, d: Short): Task[Either[AppError, Unit]]
+  def getDecimalsInPrice(oid: OrderbookId): Task[Either[AppError, Short]]
 }
 
 class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
@@ -247,6 +258,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
   private var projectedDb: Map[String, Vector[ProjectedItem]]     = Map.empty
   var klineDb: Map[String, Vector[KlineItem]]                     = Map.empty
   private var marketStatsDb: Map[String, Vector[MarketStatsItem]] = Map.empty
+  private var decimalsInPriceDb: Map[OrderbookId, Short]          = Map.empty
   override def connect(): Task[Either[AppError, Unit]]            = ().asRight.pure[Task]
 
   override def disconnect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
@@ -269,6 +281,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       maturityDate: Int,
       contractMultiplier: Int,
       settlMethod: String,
+      decimalsInPrice: Short,
       marketTs: Micro
   ): Task[Either[AppError, Unit]] = {
     symbolReferenceDb = symbolReferenceDb + (oid -> symbol)
@@ -281,14 +294,18 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
   override def saveOrderbookItem(
       symbol: Instrument,
       orderbookId: OrderbookId,
-      item: OrderbookItem
+      item: OrderbookItem,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] = {
     val list = orderbookDb.getOrElse(symbol.value, Vector.empty)
     orderbookDb += (symbol.value -> (Vector(item) ++ list))
     ().asRight[AppError].pure[Task]
   }
 
-  override def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]] =
+  override def getLastOrderbookItem(
+      symbol: Instrument,
+      decimalsInPrice: Short
+  ): Task[Either[AppError, Option[OrderbookItem]]] =
     orderbookDb.getOrElse(symbol.value, Vector.empty).sortWith(_.seq > _.seq).headOption.asRight.pure[Task]
 
   override def updateTicker(
@@ -485,6 +502,14 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       settlPrice: Price
   ): Task[Either[AppError, Unit]] =
     ().asRight.pure[Task] // UNUSED
+
+  override def getDecimalsInPrice(oid: OrderbookId): Task[Either[AppError, Short]] =
+    decimalsInPriceDb.getOrElse(oid, 1.asInstanceOf[Short]).asRight.pure[Task]
+
+  override def saveDecimalsInPrice(oid: OrderbookId, d: Short): Task[Either[AppError, Unit]] = {
+    decimalsInPriceDb += (oid -> d)
+    ().asRight.pure[Task]
+  }
 }
 
 object InMemImpl {
@@ -550,6 +575,10 @@ object Store {
       case _ =>
         base.update(side = item.side, level = item.level, price = item.price, qty = item.qty, marketTs = item.marketTs)
     }
+
+  def intToFloat(i: Int, decimals: Short): Float = i.toFloat / Math.pow(10, decimals).toFloat
+
+  def floatToInt(f: Float, decimals: Short): Int = Math.round(f * Math.pow(10, decimals).toFloat)
 
   def redis(channel: Channel, redisConfig: RedisConfig): Store =
     new RedisImpl(channel, RedisClient.create(s"redis://${redisConfig.host}:${redisConfig.port}"))

@@ -3,13 +3,13 @@ package repo
 
 import AppError.{RedisConnectionError, SecondNotFound, SymbolNotFound}
 import Config.{Channel, DbType}
-import entity.{Instrument, Micro, OrderbookId, Price, Price8, Qty}
+import entity._
 
 import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId}
-import io.lettuce.core.{Limit, Range, RedisClient}
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.api.sync.RedisCommands
+import io.lettuce.core.{Limit, Range, RedisClient}
 import monix.eval.Task
 
 import scala.collection.mutable
@@ -77,7 +77,8 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       maturityDate: Int,
       contractMultiplier: Int,
       settlMethod: String,
-      marketTs: Micro,
+      decimalsInPrice: Short,
+      marketTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
       _ <- EitherT.rightT[Task, AppError](commands.get.hset(keyTradableInstrument, oid.value.toString, symbol.value))
@@ -103,14 +104,14 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
   private val maxLevel              = "maxLevel"
   private val bracketPattern: Regex = "(?<=\\[).+?(?=])".r
 
-  private val mapToPrices: (mutable.Map[String, String], String) => Array[Price] = (map, key) =>
+  private val mapToPrices: (mutable.Map[String, String], String, Short) => Array[Price] = (map, key, decInPrice) =>
     map
       .get(key)
       .flatMap(p => bracketPattern findFirstIn p)
       .getOrElse("")
       .split(",")
       .flatMap(p => Option(p).filter(_.trim.nonEmpty))
-      .map(p => Price(p.toInt))
+      .map(p => Price(Store.floatToInt(p.toFloat, decInPrice)))
 
   private val mapToQty: (mutable.Map[String, String], String) => Array[Qty] = (map, key) =>
     map
@@ -130,7 +131,10 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       .flatMap(p => Option(p).filter(_.trim.nonEmpty))
       .map(p => Micro(p.toLong))
 
-  override def getLastOrderbookItem(symbol: Instrument): Task[Either[AppError, Option[OrderbookItem]]] =
+  override def getLastOrderbookItem(
+      symbol: Instrument,
+      decimalsInPrice: Short
+  ): Task[Either[AppError, Option[OrderbookItem]]] =
     (for {
       obk <- EitherT.rightT[Task, AppError](keyOrderbook(symbol))
       res <- EitherT.rightT[Task, AppError](
@@ -144,8 +148,8 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
             val maxLevel  = body.getOrElse(this.maxLevel, "10").toInt
             val marketTs  = Micro(body.getOrElse(this.tss, "0").toLong)
             val bananaTs  = Micro(body.getOrElse(this.tsb, "0").toLong)
-            val askPrices = mapToPrices(body, a)
-            val bidPrices = mapToPrices(body, b)
+            val askPrices = mapToPrices(body, a, decimalsInPrice)
+            val bidPrices = mapToPrices(body, b, decimalsInPrice)
             val askQtys   = mapToQty(body, aq)
             val bidQtys   = mapToQty(body, bq)
             val askTimes  = mapToMicro(body, at)
@@ -181,7 +185,8 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
   override def saveOrderbookItem(
       symbol: Instrument,
       orderbookId: OrderbookId,
-      item: OrderbookItem
+      item: OrderbookItem,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
     (for {
       obk <- EitherT.rightT[Task, AppError](keyOrderbook(symbol))
@@ -189,17 +194,17 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
         val id       = item.seq
         val maxLevel = item.maxLevel
         val aTup = item.asks.map {
-          case Some(value) => (value._1, value._2, value._3)
-          case None        => (Price(0), Qty(0L), Micro(0L))
+          case Some(value) => (Store.intToFloat(value._1.value, decimalsInPrice), value._2, value._3)
+          case None        => (0.0f, Qty(0L), Micro(0L))
         }
-        val a  = s"""[${aTup.map(_._1.value).mkString(",")}]"""
+        val a  = s"""[${aTup.map(_._1).mkString(",")}]"""
         val aq = s"""[${aTup.map(_._2.value).mkString(",")}]"""
         val at = s"""[${aTup.map(_._3.value).mkString(",")}]"""
         val bTup = item.bids.map {
-          case Some(value) => (value._1, value._2, value._3)
-          case None        => (Price(0), Qty(0L), Micro(0L))
+          case Some(value) => (Store.intToFloat(value._1.value, decimalsInPrice), value._2, value._3)
+          case None        => (0.0f, Qty(0L), Micro(0L))
         }
-        val b        = s"""[${bTup.map(_._1.value).mkString(",")}]"""
+        val b        = s"""[${bTup.map(_._1).mkString(",")}]"""
         val bq       = s"""[${bTup.map(_._2.value).mkString(",")}]"""
         val bt       = s"""[${bTup.map(_._3.value).mkString(",")}]"""
         val marketTs = item.marketTs.value.toString
@@ -444,4 +449,17 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       settlPrice: Price
   ): Task[Either[AppError, Unit]] =
     ().asRight.pure[Task] // UNUSED
+
+  override def saveDecimalsInPrice(oid: OrderbookId, d: Short): Task[Either[AppError, Unit]] =
+    (for {
+      _ <- EitherT.rightT[Task, AppError](commands.get.hset(keyDecimalsInPrice, oid.value.toString, d.toString))
+    } yield ()).value
+
+  override def getDecimalsInPrice(oid: OrderbookId): Task[Either[AppError, Short]] =
+    (for {
+      res <- EitherT.fromEither[Task](
+        Option(commands.get.hget(keyDecimalsInPrice, oid.value.toString))
+          .fold(1.asInstanceOf[Short].asRight)(p => p.toShort.asRight)
+      )
+    } yield res).value
 }
