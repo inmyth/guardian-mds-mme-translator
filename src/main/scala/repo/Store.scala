@@ -171,6 +171,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       action: Byte,
       tradeReportCode: Short,
       dealDateTime: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
@@ -186,6 +187,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       action: Byte,
       tradeReportCode: Short,
       dealDateTime: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
@@ -197,6 +199,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       p: Price,
       q: Qty,
       ib: Qty,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
@@ -212,6 +215,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       lastAuctionPx: Price,
       avgpx: Price,
       turnOverQty: Qty,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
@@ -230,19 +234,22 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       change: Price8,
       changePercent: Int,
       tradeTs: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
 
   def updateMySqlIPOPrice(
       oid: OrderbookId,
-      ipoPrice: Price
+      ipoPrice: Price,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]]
 
   def updateMySqlSettlementPrice(
       oid: OrderbookId,
       marketTs: Micro,
-      settlPrice: Price
+      settlPrice: Price,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]]
 
   def saveDecimalsInPrice(oid: OrderbookId, d: Short): Task[Either[AppError, Unit]]
@@ -319,6 +326,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       action: Byte,
       tradeReportCode: Short,
       dealDateTime: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
@@ -341,6 +349,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
           action = action,
           tradeReportCode = tradeReportCode,
           dealDateTime = dealDateTime,
+          decimalsInPrice = decimalsInPrice,
           marketTs = marketTs,
           bananaTs = bananaTs
         )
@@ -376,6 +385,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       action: Byte,
       tradeReportCode: Short,
       dealDateTime: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
@@ -404,6 +414,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       p: Price,
       q: Qty,
       ib: Qty,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
@@ -432,6 +443,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       lastAuctionPx: Price,
       avgpx: Price,
       turnOverQty: Qty,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
@@ -467,6 +479,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       change: Price8,
       changePercent: Int,
       tradeTs: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
@@ -493,13 +506,15 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
 
   override def updateMySqlIPOPrice(
       oid: OrderbookId,
-      ipoPrice: Price
+      ipoPrice: Price,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] = ().asRight.pure[Task] // UNUSED
 
   override def updateMySqlSettlementPrice(
       oid: OrderbookId,
       marketTs: Micro,
-      settlPrice: Price
+      settlPrice: Price,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
     ().asRight.pure[Task] // UNUSED
 
@@ -576,9 +591,9 @@ object Store {
         base.update(side = item.side, level = item.level, price = item.price, qty = item.qty, marketTs = item.marketTs)
     }
 
-  def intToFloat(i: Int, decimals: Short): Float = i.toFloat / Math.pow(10, decimals).toFloat
-
-  def floatToInt(f: Float, decimals: Short): Int = Math.round(f * Math.pow(10, decimals).toFloat)
+  def intToBigDecimal(i: Int, decimals: Short): BigDecimal   = BigDecimal(i / Math.pow(10, decimals))
+  def longToBigDecimal(l: Long, decimals: Short): BigDecimal = BigDecimal(l / Math.pow(10, decimals))
+  def bigDecimalToInt(b: BigDecimal, decimals: Short): Int   = Math.round((b * Math.pow(10, decimals)).toFloat)
 
   def redis(channel: Channel, redisConfig: RedisConfig): Store =
     new RedisImpl(channel, RedisClient.create(s"redis://${redisConfig.host}:${redisConfig.port}"))

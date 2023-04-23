@@ -157,6 +157,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
               action = 1,
               tradeReportCode = 20,
               dealDateTime = dealDateTime,
+              decimalsInPrice = decimalsInPrice,
               askTime1,
               bananaTs
             )
@@ -171,6 +172,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
               action = 1,
               tradeReportCode = 20,
               dealDateTime = dealDateTime,
+              decimalsInPrice = decimalsInPrice,
               askTime2,
               bananaTs
             )
@@ -185,6 +187,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
               action = 1,
               tradeReportCode = 20,
               dealDateTime = dealDateTime,
+              decimalsInPrice = decimalsInPrice,
               askTime3,
               bananaTs
             )
@@ -207,6 +210,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
               action = 1,
               tradeReportCode = 20,
               dealDateTime = dealDateTime,
+              decimalsInPrice = decimalsInPrice,
               askTime3,
               bananaTs
             )
@@ -224,6 +228,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           p = askPrice1,
           q = askQty1,
           ib = askQty2,
+          decimalsInPrice = decimalsInPrice,
           marketTs = marketTs,
           bananaTs = bananaTs
         )
@@ -238,6 +243,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           lastAuctionPx = askPrice5,
           avgpx = askPrice6,
           turnOverQty = askQty1,
+          decimalsInPrice = decimalsInPrice,
           marketTs = marketTs,
           bananaTs = bananaTs
         )
@@ -255,6 +261,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           change = changeA,
           changePercent = changePercent,
           tradeTs = tradeTs,
+          decimalsInPrice = decimalsInPrice,
           marketTs = marketTs,
           bananaTs = bananaTs
         )

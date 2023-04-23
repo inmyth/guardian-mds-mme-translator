@@ -264,7 +264,10 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       )
     } yield res).value
 
-  override def getLastOrderbookItem(symbol: Instrument, decimalsInPrice: Short): Task[Either[AppError, Option[OrderbookItem]]] =
+  override def getLastOrderbookItem(
+      symbol: Instrument,
+      decimalsInPrice: Short
+  ): Task[Either[AppError, Option[OrderbookItem]]] =
     (for {
       sql <- EitherT.rightT[Task, AppError](
         s"""
@@ -286,7 +289,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
             val marketTs = fromSqlDateToMicro(p, cSourceTime)
             val asks = (1 to maxLevel)
               .map(i => {
-                val maybePx  = Option(p.getFloat(cOrderBookMDAskPrice(i))).map(p => Store.floatToInt(p, decimalsInPrice))
+                val maybePx = Option(p.get(cOrderBookMDAskPrice(i)))
+                  .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                  .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
                 val maybeQty = Option(p.getLong(cOrderBookMDAskSize(i)))
                 (maybePx, maybeQty) match {
                   case (None, None) => None
@@ -296,7 +301,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               .filter(_.isDefined)
             val bids = (1 to maxLevel)
               .map(i => {
-                val maybePx  = Option(p.getFloat(cOrderBookMDBidPrice(i))).map(p => Store.floatToInt(p, decimalsInPrice))
+                val maybePx = Option(p.get(cOrderBookMDBidPrice(i)))
+                  .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                  .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
                 val maybeQty = Option(p.getLong(cOrderBookMDBidSize(i)))
                 (maybePx, maybeQty) match {
                   case (None, None) => None
@@ -370,8 +377,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         val sourceTime    = microToSqlDateTime(item.marketTs).toString
         val receivingTime = microToSqlDateTime(item.bananaTs).toString
         Vector(sourceTime, sourceTime, receivingTime, item.seq, orderbookId.value, symbol.value) ++
-          bids.map(p => Store.intToFloat(p._1.value, decimalsInPrice)) ++ bids.map(_._2.value) ++
-          asks.map(p => Store.intToFloat(p._1.value, decimalsInPrice)) ++ asks.map(_._2.value)
+          bids.map(p => Store.intToBigDecimal(p._1.value, decimalsInPrice).toString()) ++ bids.map(_._2.value) ++
+          asks.map(p => Store.intToBigDecimal(p._1.value, decimalsInPrice).toString()) ++ asks.map(_._2.value)
       }
       _ <- EitherT.right[AppError](
         Task
@@ -433,6 +440,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       action: Byte,
       tradeReportCode: Short,
       dealDateTime: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
@@ -450,7 +458,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         val seqNo         = seq
         val secCode       = oid.value
         val secName       = symbol.value
-        val lastPrice     = p.value
+        val lastPrice     = Store.intToBigDecimal(p.value, decimalsInPrice).toString()
         val volume        = q.value
         val (bidAggressor, askAggressor): (Byte, Byte) = aggressor.toChar match {
           case 'B' => (1, 0)
@@ -491,6 +499,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       action: Byte,
       tradeReportCode: Short,
       dealDateTime: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
@@ -508,13 +517,14 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           action = action,
           tradeReportCode = tradeReportCode,
           dealDateTime = dealDateTime,
+          decimalsInPrice = decimalsInPrice,
           marketTs = marketTs,
           bananaTs = bananaTs
         )
       )
     } yield ()).value
 
-  def getLastProjected: Task[Either[AppError, Option[LastProjectedItem]]] =
+  def getLastProjected(decimalsInPrice: Short): Task[Either[AppError, Option[LastProjectedItem]]] =
     (for {
       sql <- EitherT.rightT[Task, AppError](
         s"""
@@ -533,7 +543,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
               projTime = fromSqlDateToMicro(p, cProjTime),
               seq = p.getLong(cSeqNo),
               secCode = p.getInt(cSecCode),
-              price = Price(p.getInt(cProjPrice))
+              price = Price(
+                Store.bigDecimalToInt(BigDecimal(p.get(cProjPrice).asInstanceOf[java.math.BigDecimal]), decimalsInPrice)
+              )
             )
           })
           .headOption
@@ -586,11 +598,12 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       p: Price,
       q: Qty,
       ib: Qty,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
-      last <- EitherT(getLastProjected)
+      last <- EitherT(getLastProjected(decimalsInPrice))
       _ <- (p, last) match {
         case (now, l) if now.value == Int.MinValue && l.isDefined && l.get.price.value >= 0L =>
           EitherT(updateProjectedIsFinal(last.get.projTime, last.get.seq, last.get.secCode, isFinal = true))
@@ -609,7 +622,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         val seqNo         = seq
         val secCode       = oid.value
         val secName       = symbol.value
-        val projPrice     = p.value
+        val projPrice     = Store.intToBigDecimal(p.value, decimalsInPrice).toString()
         val projVolume    = q.value
         val projImbalance = ib.value
         Vector(
@@ -640,6 +653,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       lastAuctionPx: Price,
       avgpx: Price,
       turnOverQty: Qty,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
@@ -653,6 +667,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           l = l,
           c = c,
           turnOverQty = turnOverQty,
+          decimalsInPrice = decimalsInPrice,
           marketTs = marketTs
         )
       case Channel.fu =>
@@ -664,6 +679,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           l = l,
           c = c,
           turnOverQty = turnOverQty,
+          decimalsInPrice = decimalsInPrice,
           marketTs = marketTs
         )
     }
@@ -671,7 +687,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   override def updateMySqlSettlementPrice(
       oid: OrderbookId,
       marketTs: Micro,
-      settlPrice: Price
+      settlPrice: Price,
+      decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
     (for {
       marketDt <- EitherT.rightT[Task, AppError](microToSqlDateTime(marketTs))
@@ -703,7 +720,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
             )
             p <- EitherT.rightT[Task, AppError](
               Vector(
-                settlPrice.value,
+                Store.intToBigDecimal(settlPrice.value, decimalsInPrice).toString(),
                 value
               )
             )
@@ -716,7 +733,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       }
     } yield ()).value
 
-  def getEquityDayOf(day: java.sql.Date): Task[Either[AppError, Option[EquityDayItem]]] =
+  def getEquityDayOf(day: java.sql.Date, decimalsInPrice: Short): Task[Either[AppError, Option[EquityDayItem]]] =
     (for {
       pastSql <- EitherT.rightT[Task, AppError](s"""
          |SELECT * FROM $dayTable WHERE $cTradeDate
@@ -732,21 +749,45 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           .map(p => {
             EquityDayItem(
               dateTime = p.getDate(cTradeDate),
-              openPrice1 = Option(p.getInt(cOpen1Price)).map(Price(_)),
-              openPrice2 = Option(p.getInt(cOpen2Price)).map(Price(_)),
-              closePrice1 = Option(p.getInt(cClose1Price)).map(Price(_)),
-              closePrice2 = Option(p.getInt(cClose2Price)).map(Price(_)),
-              h = Option(p.getInt(cHighPrice)).map(Price(_)),
-              l = Option(p.getInt(cLowPrice)).map(Price(_)),
+              openPrice1 = Option(p.get(cOpen1Price))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              openPrice2 = Option(p.get(cOpen2Price))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              closePrice1 = Option(p.get(cClose1Price))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              closePrice2 = Option(p.get(cClose2Price))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              h = Option(p.get(cHighPrice))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              l = Option(p.get(cLowPrice))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
               vol = Option(p.getLong(cVolume)).map(Qty(_)),
-              settlPrice = Option(p.getInt(cSettlementPrice)).map(Price(_))
+              settlPrice = Option(p.get(cSettlementPrice))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price)
             )
           })
           .headOption
       )
     } yield past).value
 
-  def getDerivativeDayOf(day: java.sql.Date): Task[Either[AppError, Option[DerivativeDayItem]]] =
+  def getDerivativeDayOf(
+      day: java.sql.Date,
+      decimalsInPrice: Short
+  ): Task[Either[AppError, Option[DerivativeDayItem]]] =
     (for {
       pastSql <- EitherT.rightT[Task, AppError](s"""
            |SELECT * FROM $dayTable WHERE $cTradeDate
@@ -762,16 +803,43 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           .map(p => {
             DerivativeDayItem(
               dateTime = p.getDate(cTradeDate),
-              openPrice1 = Option(p.getInt(cOpen1Price)).map(Price(_)),
-              openPrice2 = Option(p.getInt(cOpen2Price)).map(Price(_)),
-              closePrice1 = Option(p.getInt(cClose1Price)).map(Price(_)),
-              closePrice2 = Option(p.getInt(cClose2Price)).map(Price(_)),
-              openNightPrice = Option(p.getInt(cOpenNightPrice)).map(Price(_)),
-              closeNightPrice = Option(p.getInt(cCloseNightPrice)).map(Price(_)),
-              h = Option(p.getInt(cHighPrice)).map(Price(_)),
-              l = Option(p.getInt(cLowPrice)).map(Price(_)),
+              openPrice1 = Option(p.get(cOpen1Price))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              openPrice2 = Option(p.get(cOpen2Price))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              closePrice1 = Option(p.get(cClose1Price))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              closePrice2 = Option(p.get(cClose2Price))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              openNightPrice = Option(p.get(cOpenNightPrice))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              closeNightPrice = Option(p.get(cCloseNightPrice))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              h = Option(p.get(cHighPrice))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
+              l = Option(p.get(cLowPrice))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price),
               vol = Option(p.getLong(cVolume)).map(Qty(_)),
-              settlPrice = Option(p.getInt(cSettlementPrice)).map(Price(_))
+              settlPrice = Option(p.get(cSettlementPrice))
+                .map(p => BigDecimal(p.asInstanceOf[java.math.BigDecimal]))
+                .map(p => Store.bigDecimalToInt(p, decimalsInPrice))
+                .map(Price)
             )
           })
           .headOption
@@ -786,12 +854,13 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       l: Price,
       c: Price,
       turnOverQty: Qty,
+      decimalsInPrice: Short,
       marketTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
       marketDt <- EitherT.rightT[Task, AppError](microToSqlDateTime(marketTs))
       today    <- EitherT.rightT[Task, AppError](localDateToMySqlDate(marketDt.toLocalDate))
-      past     <- EitherT(getEquityDayOf(today))
+      past     <- EitherT(getEquityDayOf(today, decimalsInPrice))
       item <- EitherT.rightT[Task, AppError] {
         if (past.isEmpty) {
           EquityDayItem(
@@ -831,11 +900,11 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
             marketDt,
             oid.value,
             symbol.value,
-            o.value,
-            o.value,
-            c.value,
-            h.value,
-            l.value,
+            Store.intToBigDecimal(o.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(o.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(c.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(h.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(l.value, decimalsInPrice).toString(),
             turnOverQty.value
           )
           (s, p)
@@ -843,18 +912,18 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         else {
           val s = s"""
              |UPDATE $dayTable SET $cTradeDate = ?,
-             |${item.openPrice2.map(p => s"$cOpen2Price = ${p.value},").getOrElse("")}
-             |${item.closePrice1.map(p => s"$cClose1Price = ${p.value},").getOrElse("")}
-             |${item.closePrice2.map(p => s"$cClose2Price = ${p.value},").getOrElse("")}
+             |${item.openPrice2.map(p => s"$cOpen2Price = ${Store.intToBigDecimal(p.value, decimalsInPrice).toString()},").getOrElse("")}
+             |${item.closePrice1.map(p => s"$cClose1Price = ${Store.intToBigDecimal(p.value, decimalsInPrice).toString()},").getOrElse("")}
+             |${item.closePrice2.map(p => s"$cClose2Price = ${Store.intToBigDecimal(p.value, decimalsInPrice).toString()},").getOrElse("")}
              |$cOpenPrice = ?, $cClosePrice = ?, $cHighPrice = ?, $cLowPrice = ?, $cVolume = ?
              |WHERE $cTradeDate = ?
              |""".stripMargin
           val p = Vector(
             marketDt,
-            o.value,
-            c.value,
-            h.value,
-            l.value,
+            Store.intToBigDecimal(o.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(c.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(h.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(l.value, decimalsInPrice).toString(),
             turnOverQty.value,
             item.dateTime
           )
@@ -874,12 +943,13 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       l: Price,
       c: Price,
       turnOverQty: Qty,
+      decimalsInPrice: Short,
       marketTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
       marketDt <- EitherT.rightT[Task, AppError](microToSqlDateTime(marketTs))
       today    <- EitherT.rightT[Task, AppError](localDateToMySqlDate(marketDt.toLocalDate))
-      past     <- EitherT(getDerivativeDayOf(today))
+      past     <- EitherT(getDerivativeDayOf(today, decimalsInPrice))
       item <- EitherT.rightT[Task, AppError] {
         if (past.isEmpty) {
           DerivativeDayItem(
@@ -930,11 +1000,11 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
             marketDt,
             oid.value,
             symbol.value,
-            o.value,
-            o.value,
-            c.value,
-            h.value,
-            l.value,
+            Store.intToBigDecimal(o.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(o.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(c.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(h.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(l.value, decimalsInPrice).toString(),
             turnOverQty.value
           )
           (s, p)
@@ -943,20 +1013,30 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           val s =
             s"""
                |UPDATE $dayTable SET $cTradeDate = ?,
-               |${item.openPrice2.map(p => s"$cOpen2Price = ${p.value},").getOrElse("")}
-               |${item.closePrice1.map(p => s"$cClose1Price = ${p.value},").getOrElse("")}
-               |${item.closePrice2.map(p => s"$cClose2Price = ${p.value},").getOrElse("")}
-               |${item.openNightPrice.map(p => s"$cOpenNightPrice = ${p.value},").getOrElse("")}
-               |${item.closeNightPrice.map(p => s"$cCloseNightPrice = ${p.value},").getOrElse("")}
+               |${item.openPrice2
+              .map(p => s"$cOpen2Price = ${Store.intToBigDecimal(p.value, decimalsInPrice).toString()},")
+              .getOrElse("")}
+               |${item.closePrice1
+              .map(p => s"$cClose1Price = ${Store.intToBigDecimal(p.value, decimalsInPrice).toString()},")
+              .getOrElse("")}
+               |${item.closePrice2
+              .map(p => s"$cClose2Price = ${Store.intToBigDecimal(p.value, decimalsInPrice).toString()},")
+              .getOrElse("")}
+               |${item.openNightPrice
+              .map(p => s"$cOpenNightPrice = ${Store.intToBigDecimal(p.value, decimalsInPrice).toString()},")
+              .getOrElse("")}
+               |${item.closeNightPrice
+              .map(p => s"$cCloseNightPrice = ${Store.intToBigDecimal(p.value, decimalsInPrice).toString()},")
+              .getOrElse("")}
                |$cOpenPrice = ?, $cClosePrice = ?, $cHighPrice = ?, $cLowPrice = ?, $cVolume = ?
                |WHERE $cTradeDate = ?
                |""".stripMargin
           val p = Vector(
             marketDt,
-            o.value,
-            c.value,
-            h.value,
-            l.value,
+            Store.intToBigDecimal(o.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(c.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(h.value, decimalsInPrice).toString(),
+            Store.intToBigDecimal(l.value, decimalsInPrice).toString(),
             turnOverQty.value,
             item.dateTime
           )
@@ -982,6 +1062,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       change: Price8,
       changePercent: Int,
       tradeTs: Long,
+      decimalsInPrice: Short,
       marketTs: Micro,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
@@ -999,6 +1080,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
                 c = c,
                 tradedVol = tradedVol,
                 tradedValue = tradedValue,
+                decimalsInPrice = decimalsInPrice,
                 marketTs = marketTs
               )
             )
@@ -1012,6 +1094,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
                 c = c,
                 tradedVol = tradedVol,
                 tradedValue = tradedValue,
+                decimalsInPrice = decimalsInPrice,
                 marketTs = marketTs
               )
             )
@@ -1030,6 +1113,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       c: Price8,
       tradedVol: Qty,
       tradedValue: Price8,
+      decimalsInPrice: Short,
       marketTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
@@ -1046,10 +1130,10 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           today,
           oid.value,
           symbol.value,
-          o.value,
-          c.value,
-          h.value,
-          l.value,
+          Store.longToBigDecimal(o.value, decimalsInPrice).toString(),
+          Store.longToBigDecimal(c.value, decimalsInPrice).toString(),
+          Store.longToBigDecimal(h.value, decimalsInPrice).toString(),
+          Store.longToBigDecimal(l.value, decimalsInPrice).toString(),
           tradedVol.value,
           tradedValue.value
         )
@@ -1068,6 +1152,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       c: Price8,
       tradedVol: Qty,
       tradedValue: Price8,
+      decimalsInPrice: Short,
       marketTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
@@ -1083,10 +1168,10 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           marketDt,
           oid.value,
           symbol.value,
-          o.value,
-          c.value,
-          h.value,
-          l.value,
+          Store.longToBigDecimal(o.value, decimalsInPrice).toString(),
+          Store.longToBigDecimal(c.value, decimalsInPrice).toString(),
+          Store.longToBigDecimal(h.value, decimalsInPrice).toString(),
+          Store.longToBigDecimal(l.value, decimalsInPrice).toString(),
           tradedVol.value,
           tradedValue.value
         )
@@ -1096,7 +1181,11 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       )
     } yield ()).value
 
-  override def updateMySqlIPOPrice(oid: OrderbookId, ipoPrice: Price): Task[Either[AppError, Unit]] =
+  override def updateMySqlIPOPrice(
+      oid: OrderbookId,
+      ipoPrice: Price,
+      decimalsInPrice: Short
+  ): Task[Either[AppError, Unit]] =
     (for {
       _ <- channel match {
         case com.guardian.Config.Channel.eq =>
@@ -1105,7 +1194,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
                |UPDATE $tradableInstrumentTable SET $cIPOPrice = ? WHERE $cSecCode = ?
                |""".stripMargin)
             params <- EitherT.rightT[Task, AppError](
-              Vector(ipoPrice.value, oid.value)
+              Vector(Store.intToBigDecimal(ipoPrice.value, decimalsInPrice).toString(), oid.value)
             )
             _ <- EitherT.right[AppError](
               Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
@@ -1155,7 +1244,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cIsValidForTrading varchar(1) NULL,
            |  $cIsOddLot varchar(1) NULL,
            |  $cParValue bigint NULL,
-           |  $cIPOPrice int NULL,
+           |  $cIPOPrice decimal(14, 6) NULL,
            |  $cSectorNumber varchar(20) NULL,
            |  $cDecimalsInPrice smallint DEFAULT 1,
            |  $cTradeDate datetime(6) NULL,
@@ -1187,9 +1276,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cSeqNo bigint NOT NULL,
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar (20) NULL,
-           |  ${(1 to 10).map(i => s"${cOrderBookMDAskPrice(i)} float NULL").mkString(",")},
+           |  ${(1 to 10).map(i => s"${cOrderBookMDAskPrice(i)} decimal(14, 6) NULL").mkString(",")},
            |  ${(1 to 10).map(i => s"${cOrderBookMDAskSize(i)} bigint NULL").mkString(",")},
-           |  ${(1 to 10).map(i => s"${cOrderBookMDBidPrice(i)} float NULL").mkString(",")},
+           |  ${(1 to 10).map(i => s"${cOrderBookMDBidPrice(i)} decimal(14, 6) NULL").mkString(",")},
            |  ${(1 to 10).map(i => s"${cOrderBookMDBidSize(i)} bigint NULL").mkString(",")},
            |  CONSTRAINT PK_MDS_EquityOrderBook PRIMARY KEY CLUSTERED
            |  (
@@ -1208,9 +1297,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cSeqNo bigint NOT NULL,
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar (20) NULL,
-           |  ${(1 to 5).map(i => s"${cOrderBookMDAskPrice(i)} float NULL").mkString(",")},
+           |  ${(1 to 5).map(i => s"${cOrderBookMDAskPrice(i)} decimal(14, 6) NULL").mkString(",")},
            |  ${(1 to 5).map(i => s"${cOrderBookMDAskSize(i)} bigint NULL").mkString(",")},
-           |  ${(1 to 5).map(i => s"${cOrderBookMDBidPrice(i)} float NULL").mkString(",")},
+           |  ${(1 to 5).map(i => s"${cOrderBookMDBidPrice(i)} decimal(14, 6) NULL").mkString(",")},
            |  ${(1 to 5).map(i => s"${cOrderBookMDBidSize(i)} bigint NULL").mkString(",")},
            |  CONSTRAINT PK_MDS_DerivativeOrderBook PRIMARY KEY CLUSTERED
            |  (
@@ -1252,7 +1341,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
              |	$cSeqNo bigint NOT NULL,
              |	$cSecCode int NOT NULL,
              |	$cSecName varchar(20) NULL,
-             |	$cProjPrice int NULL,
+             |	$cProjPrice decimal(14, 6) NULL,
              |	$cProjVolume bigint NULL,
              |	$cProjImbalance bigint NULL,
              |	$cisFinal bit NOT NULL DEFAULT 0,
@@ -1269,15 +1358,15 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
              |	$cTradeDate datetime(6) NOT NULL,
              |	$cSecCode int NOT NULL,
              |	$cSecName varchar(20) NULL,
-             |	$cOpen1Price int NULL,
-             |	$cOpen2Price int NULL,
-             |	$cClose1Price int NULL,
-             |	$cClose2Price int NULL,
-             |  $cOpenPrice int NULL,
-             |  $cClosePrice int NULL,
-             |	$cSettlementPrice int NULL,
-             |	$cHighPrice int NULL,
-             |  $cLowPrice int NULL,
+             |	$cOpen1Price decimal(14, 6) NULL,
+             |	$cOpen2Price decimal(14, 6) NULL,
+             |	$cClose1Price decimal(14, 6) NULL,
+             |	$cClose2Price decimal(14, 6) NULL,
+             |  $cOpenPrice decimal(14, 6) NULL,
+             |  $cClosePrice decimal(14, 6) NULL,
+             |	$cSettlementPrice decimal(14, 6) NULL,
+             |	$cHighPrice decimal(14, 6) NULL,
+             |  $cLowPrice decimal(14, 6) NULL,
              |	$cVolume bigint NULL,
              |	$cBidAggressor int NULL,
              |	$cAskAggressor int NULL,
@@ -1292,17 +1381,17 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cTradeDate datetime(6) NOT NULL,
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar(20) NULL,
-           |  $cOpen1Price int NULL,
-           |  $cOpen2Price int NULL,
-           |  $cClose1Price int NULL,
-           |  $cClose2Price int NULL,
-           |  $cOpenNightPrice int NULL,
-           |  $cCloseNightPrice int NULL,
-           |  $cOpenPrice int NULL,
-           |  $cClosePrice int NULL,
-           |  $cSettlementPrice int NULL,
-           |  $cHighPrice int NULL,
-           |  $cLowPrice int NULL,
+           |  $cOpen1Price decimal(14, 6) NULL,
+           |  $cOpen2Price decimal(14, 6) NULL,
+           |  $cClose1Price decimal(14, 6) NULL,
+           |  $cClose2Price decimal(14, 6) NULL,
+           |  $cOpenNightPrice decimal(14, 6) NULL,
+           |  $cCloseNightPrice decimal(14, 6) NULL,
+           |  $cOpenPrice decimal(14, 6) NULL,
+           |  $cClosePrice decimal(14, 6) NULL,
+           |  $cSettlementPrice decimal(14, 6) NULL,
+           |  $cHighPrice decimal(14, 6) NULL,
+           |  $cLowPrice decimal(14, 6) NULL,
            |  $cVolume bigint NULL,
            |  $cBidAggressor int NULL,
            |  $cAskAggressor int NULL,
@@ -1317,10 +1406,10 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cTradeDate date NOT NULL,
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar(20) NULL,
-           |  $cOpenPrice bigint NULL,
-           |  $cClosePrice bigint NULL,
-           |  $cHighPrice bigint NULL,
-           |  $cLowPrice bigint NULL,
+           |  $cOpenPrice decimal(14, 6) NULL,
+           |  $cClosePrice decimal(14, 6) NULL,
+           |  $cHighPrice decimal(14, 6) NULL,
+           |  $cLowPrice decimal(14, 6) NULL,
            |  $cVolume bigint NULL,
            |  $cValue bigint NULL,
            |CONSTRAINT PK_MDS_IndexDay PRIMARY KEY CLUSTERED
@@ -1334,10 +1423,10 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cTradeDate datetime(6) NOT NULL,
            |  $cSecCode int NOT NULL,
            |  $cSecName varchar(20) NULL,
-           |  $cOpenPrice bigint NULL,
-           |  $cClosePrice bigint NULL,
-           |  $cHighPrice bigint NULL,
-           |  $cLowPrice bigint NULL,
+           |  $cOpenPrice decimal(14, 6) NULL,
+           |  $cClosePrice decimal(14, 6) NULL,
+           |  $cHighPrice decimal(14, 6) NULL,
+           |  $cLowPrice decimal(14, 6) NULL,
            |  $cVolume bigint NULL,
            |  $cValue bigint NULL,
            |CONSTRAINT PK_MDS_IndexTicker PRIMARY KEY CLUSTERED

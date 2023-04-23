@@ -168,4 +168,6 @@ object Fixtures {
     levelUpdateAction = 'N',
     numDeletes = 0
   )
+
+  def bigDecimalToLong(b: BigDecimal, decimals: Short): Long = Math.round((b * Math.pow(10, decimals)).toFloat)
 }

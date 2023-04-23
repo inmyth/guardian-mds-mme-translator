@@ -121,6 +121,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  dec    <- EitherT(store.getDecimalsInPrice(oid))
                   _ <- EitherT(
                     store.updateTicker(
                       oid = oid,
@@ -133,6 +134,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       action = a.getAction,
                       tradeReportCode = a.getTradeReportCode,
                       dealDateTime = a.getDealDateTime, //nanosec
+                      decimalsInPrice = dec,
                       marketTs = mms,
                       bananaTs = now
                     )
@@ -149,6 +151,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                     Qty(if (a.getAskQuantity < a.getBidQuantity) a.getAskQuantity else a.getBidQuantity)
                   )
                   imbalanceQty <- EitherT.rightT[Task, AppError](Qty(a.getBidQuantity - a.getAskQuantity))
+                  dec          <- EitherT(store.getDecimalsInPrice(oid))
                   _ <- EitherT(
                     store.updateProjected(
                       oid = oid,
@@ -157,6 +160,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       p = Price(a.getPrice),
                       q = matchedVol,
                       ib = imbalanceQty,
+                      decimalsInPrice = dec,
                       marketTs = mms,
                       bananaTs = now
                     )
@@ -169,6 +173,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  dec    <- EitherT(store.getDecimalsInPrice(oid))
                   _ <- EitherT(
                     store.updateKline(
                       oid = oid,
@@ -181,6 +186,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       lastAuctionPx = Price(a.getLastAuctionPrice),
                       avgpx = Price(a.getAveragePrice),
                       turnOverQty = Qty(a.getTurnOverQuantity),
+                      decimalsInPrice = dec,
                       marketTs = mms,
                       bananaTs = now
                     )
@@ -193,6 +199,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                  dec    <- EitherT(store.getDecimalsInPrice(oid))
                   _ <- EitherT(
                     store.updateMarketStats(
                       oid = oid,
@@ -208,6 +215,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       change = Price8(a.getChange),
                       changePercent = a.getChangePercent,
                       tradeTs = a.getTimestamp,
+                      decimalsInPrice = dec,
                       marketTs = mms,
                       bananaTs = now
                     )
@@ -219,16 +227,23 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                   msc <- EitherT(store.getSecond)
                   mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
                   oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                  dec <- EitherT(store.getDecimalsInPrice(oid))
                   _ <- EitherT(
                     store.updateMySqlIPOPrice(
                       oid = oid,
-                      ipoPrice = Price(a.getPrice)
+                      ipoPrice = Price(a.getPrice),
+                      decimalsInPrice = dec
                     )
                   )
                   _ <- a.getPriceType match {
                     case 5 =>
                       EitherT(
-                        store.updateMySqlSettlementPrice(oid = oid, marketTs = mms, settlPrice = Price(a.getPrice))
+                        store.updateMySqlSettlementPrice(
+                          oid = oid,
+                          marketTs = mms,
+                          settlPrice = Price(a.getPrice),
+                          decimalsInPrice = dec
+                        )
                       )
                     case _ => EitherT.rightT[Task, AppError](())
                   }

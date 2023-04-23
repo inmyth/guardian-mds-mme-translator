@@ -260,6 +260,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime,
+                decimalsInPrice = decimalsInPrice,
                 askTime1,
                 bananaTs
               )
@@ -275,6 +276,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 1,
+                decimalsInPrice = decimalsInPrice,
                 askTime2,
                 bananaTs
               )
@@ -290,6 +292,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 2,
+                decimalsInPrice = decimalsInPrice,
                 askTime3,
                 bananaTs
               )
@@ -305,6 +308,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 3,
+                decimalsInPrice = decimalsInPrice,
                 askTime3,
                 bananaTs
               )
@@ -331,6 +335,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 20,
+                decimalsInPrice = decimalsInPrice,
                 askTime5,
                 bananaTs
               )
@@ -346,6 +351,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 21,
+                decimalsInPrice = decimalsInPrice,
                 askTime5,
                 bananaTs
               )
@@ -361,6 +367,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 22,
+                decimalsInPrice = decimalsInPrice,
                 askTime5,
                 bananaTs
               )
@@ -380,6 +387,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 p = askPrice1,
                 q = askQty1,
                 ib = askQty2,
+                decimalsInPrice = decimalsInPrice,
                 marketTs = marketTs,
                 bananaTs = bananaTs
               )
@@ -397,6 +405,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 p = askPrice2,
                 q = askQty2,
                 ib = askQty2,
+                decimalsInPrice = decimalsInPrice,
                 marketTs = new Micro(marketTs.value + 1),
                 bananaTs = bananaTs
               )
@@ -414,6 +423,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 p = Price(Int.MinValue),
                 q = askQty2,
                 ib = askQty2,
+                decimalsInPrice = decimalsInPrice,
                 marketTs = Micro(marketTs.value + 2),
                 bananaTs = bananaTs
               )
@@ -431,6 +441,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 p = Price(Int.MinValue),
                 q = askQty3,
                 ib = askQty3,
+                decimalsInPrice = decimalsInPrice,
                 marketTs = Micro(marketTs.value + 3),
                 bananaTs = bananaTs
               )
@@ -442,7 +453,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
       "updateMySqlIPOPrice" should {
         "update the ipo price of an instrument in tradable instrument table" in {
           (for {
-            _   <- store.updateMySqlIPOPrice(oid, Price(10000))
+            _   <- store.updateMySqlIPOPrice(oid, Price(10000), decimalsInPrice)
             res <- getIPOPrice(store, oid)
           } yield res).runToFuture.map(_ shouldBe Price(10000))
         }
@@ -459,9 +470,11 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 h = askPrice3,
                 l = askPrice4,
                 turnOverQty = askQty1,
+                decimalsInPrice = decimalsInPrice,
                 marketTs = marketTs
               )
-              res <- store.getEquityDayOf(localDateToMySqlDate(microToSqlDateTime(marketTs).toLocalDate))
+              res <-
+                store.getEquityDayOf(localDateToMySqlDate(microToSqlDateTime(marketTs).toLocalDate), decimalsInPrice)
             } yield res).runToFuture.map(
               _ shouldBe Right(
                 Some(
@@ -491,9 +504,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = askPrice7,
               l = askPrice8,
               turnOverQty = askQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1225
             )
-            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -522,9 +536,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice3,
               l = bidPrice4,
               turnOverQty = bidQty1,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1235
             )
-            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -553,9 +568,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice7,
               l = bidPrice8,
               turnOverQty = bidQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1625
             )
-            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -584,9 +600,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice9,
               l = bidPrice10,
               turnOverQty = bidQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1635
             )
-            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getEquityDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -608,8 +625,8 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
       "updateMySqlSettlementPrice" should {
         "update settlement price in EquityDay table" in {
           (for {
-            _   <- store.updateMySqlSettlementPrice(oid, t1635, settlPrice)
-            res <- store.getEquityDayOf(localDateToMySqlDate(microToSqlDateTime(t1635).toLocalDate))
+            _   <- store.updateMySqlSettlementPrice(oid, t1635, settlPrice, decimalsInPrice)
+            res <- store.getEquityDayOf(localDateToMySqlDate(microToSqlDateTime(t1635).toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -646,6 +663,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               change = changeA,
               changePercent = 20,
               tradeTs = tradeTs,
+              decimalsInPrice = decimalsInPrice,
               marketTs = marketTs,
               bananaTs = bananaTs
             )
@@ -670,6 +688,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               change = changeA,
               changePercent = 20,
               tradeTs = tradeTs,
+              decimalsInPrice = decimalsInPrice,
               marketTs = marketTs2,
               bananaTs = bananaTs
             )
@@ -847,6 +866,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime,
+                decimalsInPrice = decimalsInPrice,
                 askTime1,
                 bananaTs
               )
@@ -862,6 +882,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 1,
+                decimalsInPrice = decimalsInPrice,
                 askTime2,
                 bananaTs
               )
@@ -877,6 +898,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 2,
+                decimalsInPrice = decimalsInPrice,
                 askTime3,
                 bananaTs
               )
@@ -892,6 +914,7 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 action = 1,
                 tradeReportCode = 20,
                 dealDateTime = dealDateTime + 3,
+                decimalsInPrice = decimalsInPrice,
                 askTime3,
                 bananaTs
               )
@@ -917,9 +940,13 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
                 h = askPrice3,
                 l = askPrice4,
                 turnOverQty = askQty1,
+                decimalsInPrice = decimalsInPrice,
                 marketTs = marketTs
               )
-              res <- store.getDerivativeDayOf(localDateToMySqlDate(microToSqlDateTime(marketTs).toLocalDate))
+              res <- store.getDerivativeDayOf(
+                localDateToMySqlDate(microToSqlDateTime(marketTs).toLocalDate),
+                decimalsInPrice
+              )
             } yield res).runToFuture.map(
               _ shouldBe Right(
                 Some(
@@ -951,9 +978,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = askPrice7,
               l = askPrice8,
               turnOverQty = askQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1225
             )
-            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -984,9 +1012,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice3,
               l = bidPrice4,
               turnOverQty = bidQty1,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1235
             )
-            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -1017,9 +1046,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice7,
               l = bidPrice8,
               turnOverQty = bidQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1625
             )
-            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -1050,9 +1080,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice9,
               l = bidPrice10,
               turnOverQty = bidQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1635
             )
-            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -1083,9 +1114,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice9,
               l = bidPrice10,
               turnOverQty = bidQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t1850
             )
-            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -1116,9 +1148,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice7,
               l = bidPrice8,
               turnOverQty = bidQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t2325
             )
-            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -1149,9 +1182,10 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
               h = bidPrice9,
               l = bidPrice10,
               turnOverQty = bidQty2,
+              decimalsInPrice = decimalsInPrice,
               marketTs = t2335
             )
-            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate))
+            res <- store.getDerivativeDayOf(localDateToMySqlDate(date.toLocalDate), decimalsInPrice)
           } yield res).runToFuture.map(
             _ shouldBe Right(
               Some(
@@ -1223,7 +1257,9 @@ object MySQLImplSpec {
         data.getRows
           .toArray()
           .map(_.asInstanceOf[ArrayRowData])
-          .map(p => Price8(p.getLong("OpenPrice")))
+          .map(p =>
+            Price8(bigDecimalToLong(BigDecimal(p.get("OpenPrice").asInstanceOf[java.math.BigDecimal]), decimalsInPrice))
+          )
           .headOption
       )
     } yield res
@@ -1241,7 +1277,9 @@ object MySQLImplSpec {
         data.getRows
           .toArray()
           .map(_.asInstanceOf[ArrayRowData])
-          .map(p => Price8(p.getLong("OpenPrice")))
+          .map(p =>
+            Price8(bigDecimalToLong(BigDecimal(p.get("OpenPrice").asInstanceOf[java.math.BigDecimal]), decimalsInPrice))
+          )
           .headOption
       )
     } yield res
@@ -1260,7 +1298,11 @@ object MySQLImplSpec {
         data.getRows
           .toArray()
           .map(_.asInstanceOf[ArrayRowData])
-          .map(p => Price(p.getInt("IPOPrice")))
+          .map(p =>
+            Price(
+              Store.bigDecimalToInt(BigDecimal(p.get("IPOPrice").asInstanceOf[java.math.BigDecimal]), decimalsInPrice)
+            )
+          )
           .head
       )
     } yield res
