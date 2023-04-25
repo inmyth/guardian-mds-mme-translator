@@ -391,8 +391,8 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
             this.h             -> Store.intToBigDecimal(h.value, decimalsInPrice).toString(),
             this.l             -> Store.intToBigDecimal(l.value, decimalsInPrice).toString(),
             this.c             -> Store.intToBigDecimal(c.value, decimalsInPrice).toString(),
-            this.lastAuctionPx -> lastAuctionPx.value.toString,
-            this.avgpx         -> avgpx.value.toString,
+            this.lastAuctionPx -> Store.intToBigDecimal(lastAuctionPx.value, decimalsInPrice).toString(),
+            this.avgpx         -> Store.intToBigDecimal(avgpx.value, decimalsInPrice).toString(),
             this.turnOverQty   -> turnOverQty.value.toString,
             this.tss           -> marketTs.value.toString,
             this.tsb           -> bananaTs.value.toString
