@@ -117,28 +117,36 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case a: TradeTickerMessageSet =>
                 (for {
-                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
-                  symbol <- EitherT(store.getInstrument(oid))
-                  msc    <- EitherT(store.getSecond)
-                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
-                  dec    <- EitherT(store.getDecimalsInPrice(oid))
-                  _ <- EitherT(
-                    store.updateTicker(
-                      oid = oid,
-                      symbol = symbol,
-                      seq = seq,
-                      p = Price(a.getPrice),
-                      q = Qty(a.getQuantity),
-                      aggressor = a.getAggressor,
-                      dealSource = a.getDealSource,
-                      action = a.getAction,
-                      tradeReportCode = a.getTradeReportCode,
-                      dealDateTime = a.getDealDateTime, //nanosec
-                      decimalsInPrice = dec,
-                      marketTs = mms,
-                      bananaTs = now
-                    )
-                  )
+                  _ <-
+                    if (channel == Channel.fu && a.getDealSource == 4) {
+                      EitherT.rightT[Task, AppError](())
+                    }
+                    else {
+                      for {
+                        oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+                        symbol <- EitherT(store.getInstrument(oid))
+                        msc    <- EitherT(store.getSecond)
+                        mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+                        dec    <- EitherT(store.getDecimalsInPrice(oid))
+                        _ <- EitherT(
+                          store.updateTicker(
+                            oid = oid,
+                            symbol = symbol,
+                            seq = seq,
+                            p = Price(a.getPrice),
+                            q = Qty(a.getQuantity),
+                            aggressor = a.getAggressor,
+                            dealSource = a.getDealSource,
+                            action = a.getAction,
+                            tradeReportCode = a.getTradeReportCode,
+                            dealDateTime = a.getDealDateTime, //nanosec
+                            decimalsInPrice = dec,
+                            marketTs = mms,
+                            bananaTs = now
+                          )
+                        )
+                      } yield ()
+                    }
                 } yield ()).value
 
               case a: EquilibriumPriceMessage =>
