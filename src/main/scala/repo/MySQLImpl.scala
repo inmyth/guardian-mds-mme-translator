@@ -36,7 +36,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
     projectedTable,
     tradableInstrumentTable,
     indexDayTable,
-    indexTickerTable
+    indexTickerTable,
+    secondTable
   ) = {
     val (ml, which) = channel match {
       case Channel.eq => (10, "Equity")
@@ -50,7 +51,8 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       s"mdsdb.MDS_${which}ProjectedPrice",
       s"mdsdb.MDS_${which}TradableInstrument",
       "mdsdb.MDS_IndexDay",
-      "mdsdb.MDS_IndexTicker"
+      "mdsdb.MDS_IndexTicker",
+      "mdsdb.MDS_Second"
     )
   }
 
@@ -85,15 +87,30 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
   private val cSettlementPrice                    = "SettlementPrice"
   private val cHighPrice                          = "HighPrice"
   private val cLowPrice                           = "LowPrice"
+  private val cId                                 = "Id"
+  private val cSecond                             = "Second"
 
   override def connect(): Task[Either[AppError, Unit]] = createTables()
 
   override def disconnect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
 
-  override def saveSecond(unixSecond: Int): Task[Either[AppError, Unit]] = {
-    marketSecondDb = Some(unixSecond)
-    ().asRight.pure[Task]
-  }
+  override def saveSecond(unixSecond: Int): Task[Either[AppError, Unit]] =
+    (for {
+      sql <- EitherT.rightT[Task, AppError](
+        s"""
+           |INSERT INTO $secondTable
+           |($cId, $cSecond) VALUES(0,?) ON DUPLICATE KEY UPDATE $cSecond=?;
+           |""".stripMargin
+      )
+      params <- EitherT.rightT[Task, AppError](Vector(unixSecond, unixSecond))
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+      )
+      _ <- EitherT.rightT[Task, AppError] {
+        marketSecondDb = Some(unixSecond)
+        ()
+      }
+    } yield ()).value
 
   override def getSecond: Task[Either[AppError, Int]] =
     marketSecondDb.fold(SecondNotFound.asLeft[Int])(p => p.asRight).pure[Task]
@@ -1435,6 +1452,13 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cSecCode ASC
            |));
            |""".stripMargin)
+      sec <- EitherT.rightT[Task, AppError](s"""
+           |CREATE TABLE mdsdb.MDS_Second(
+           |  $cId int NOT NULL,
+           |  $cSecond int NOT NULL,
+           |  PRIMARY KEY ($cId)
+           |);
+           |""".stripMargin)
       _ <- EitherT.right[AppError](
         Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))).onErrorRecover { case _ => () }
       )
@@ -1481,6 +1505,9 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       )
       _ <- EitherT.right[AppError](
         Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idt))).onErrorRecover { case _ => () }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sec))).onErrorRecover { case _ => () }
       )
     } yield ()).value
 }

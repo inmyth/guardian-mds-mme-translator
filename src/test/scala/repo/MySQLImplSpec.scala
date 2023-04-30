@@ -31,6 +31,15 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
         } yield ()).runToFuture.map(_ shouldBe ())
       }
     }
+    "saveSecond, getSecond from db" should {
+      val store = storeEq
+      "save and return second from db" in {
+        (for {
+          _ <- store.saveSecond(second)
+          res <- getDbSecond(store)
+        } yield res).runToFuture.map(_ shouldBe Some(second))
+      }
+    }
     "eq" when {
       val store = storeEq
       "saveTradableInstrument, getInstrument, getDecimalsInPrice" should {
@@ -1330,4 +1339,21 @@ object MySQLImplSpec {
           .head
       )
     } yield res
+
+  def getDbSecond(store: MySQLImpl): Task[Option[Int]] =
+    for {
+      data <- Task.fromFuture(
+        FutureConverters.asScala(
+          store.connection
+            .sendPreparedStatement(s"""SELECT Second from ${store.secondTable} WHERE Id=0""", Vector().asJava)
+        )
+      )
+      res <- Task(
+        data.getRows
+          .toArray()
+          .map(_.asInstanceOf[ArrayRowData])
+          .map(p => p.getInt("Second").toInt)
+          .headOption
+      )
+    } yield (res)
 }
