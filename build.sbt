@@ -1,8 +1,8 @@
-ThisBuild / version := "0.58"
+ThisBuild / version := "0.59"
 
 ThisBuild / scalaVersion := "2.13.10"
 
-Compile / packageBin / mainClass := Some("me.mbcu.kafka.minimal.monix.Consumer")
+Compile / packageBin / mainClass := Some("com.guardian.Main")
 
 lazy val root = (project in file("."))
   .settings(
