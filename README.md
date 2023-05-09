@@ -30,3 +30,5 @@ host port:
 env. variable:
 mysql_allow_empty_password = true
 ```
+- mysql needs the database `mdsdb` created from outside the test
+- 

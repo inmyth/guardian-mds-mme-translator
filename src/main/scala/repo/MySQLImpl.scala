@@ -52,7 +52,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       s"mdsdb.MDS_${which}TradableInstrument",
       "mdsdb.MDS_IndexDay",
       "mdsdb.MDS_IndexTicker",
-      "mdsdb.MDS_Second"
+      s"mdsdb.MDS_${which}Second"
     )
   }
 
@@ -1452,13 +1452,17 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
            |  $cSecCode ASC
            |));
            |""".stripMargin)
-      sec <- EitherT.rightT[Task, AppError](s"""
-           |CREATE TABLE mdsdb.MDS_Second(
-           |  $cId int NOT NULL,
-           |  $cSecond int NOT NULL,
-           |  PRIMARY KEY ($cId)
-           |);
-           |""".stripMargin)
+      sec <- EitherT.rightT[Task, AppError] {
+        Vector("Equity", "Derivative").map(p =>
+          s"""
+             |CREATE TABLE mdsdb.MDS_${p}Second(
+             |  $cId int NOT NULL,
+             |  $cSecond int NOT NULL,
+             |  PRIMARY KEY ($cId)
+             |);
+             |""".stripMargin
+        )
+      }
       _ <- EitherT.right[AppError](
         Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sch))).onErrorRecover { case _ => () }
       )
@@ -1507,7 +1511,10 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
         Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idt))).onErrorRecover { case _ => () }
       )
       _ <- EitherT.right[AppError](
-        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sec))).onErrorRecover { case _ => () }
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sec.head))).onErrorRecover { case _ => () }
+      )
+      _ <- EitherT.right[AppError](
+        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sec.last))).onErrorRecover { case _ => () }
       )
     } yield ()).value
 }
