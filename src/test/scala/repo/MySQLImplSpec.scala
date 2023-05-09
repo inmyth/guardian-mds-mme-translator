@@ -31,15 +31,15 @@ class MySQLImplSpec extends AsyncWordSpec with Matchers {
         } yield ()).runToFuture.map(_ shouldBe ())
       }
     }
-    "saveSecond, getSecond from db" should {
-      val store = storeEq
-      "save and return second from db" in {
-        (for {
-          _ <- store.saveSecond(second)
-          res <- getDbSecond(store)
-        } yield res).runToFuture.map(_ shouldBe Some(second))
-      }
-    }
+//    "saveSecond, getSecond from db" should {
+//      val store = storeEq
+//      "save and return second from db" in {
+//        (for {
+//          _ <- store.saveSecond(second)
+//          res <- getDbSecond(store)
+//        } yield res).runToFuture.map(_ shouldBe Some(second))
+//      }
+//    }
     "eq" when {
       val store = storeEq
       "saveTradableInstrument, getInstrument, getDecimalsInPrice" should {

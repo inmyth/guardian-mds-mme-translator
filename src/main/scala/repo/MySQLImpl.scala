@@ -96,16 +96,16 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
 
   override def saveSecond(unixSecond: Int): Task[Either[AppError, Unit]] =
     (for {
-      sql <- EitherT.rightT[Task, AppError](
-        s"""
-           |INSERT INTO $secondTable
-           |($cId, $cSecond) VALUES(0,?) ON DUPLICATE KEY UPDATE $cSecond=?;
-           |""".stripMargin
-      )
-      params <- EitherT.rightT[Task, AppError](Vector(unixSecond, unixSecond))
-      _ <- EitherT.right[AppError](
-        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
-      )
+//      sql <- EitherT.rightT[Task, AppError](
+//        s"""
+//           |INSERT INTO $secondTable
+//           |($cId, $cSecond) VALUES(0,?) ON DUPLICATE KEY UPDATE $cSecond=?;
+//           |""".stripMargin
+//      )
+//      params <- EitherT.rightT[Task, AppError](Vector(unixSecond, unixSecond))
+//      _ <- EitherT.right[AppError](
+//        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
+//      )
       _ <- EitherT.rightT[Task, AppError] {
         marketSecondDb = Some(unixSecond)
         ()
@@ -1510,12 +1510,12 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
       _ <- EitherT.right[AppError](
         Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(idt))).onErrorRecover { case _ => () }
       )
-      _ <- EitherT.right[AppError](
-        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sec.head))).onErrorRecover { case _ => () }
-      )
-      _ <- EitherT.right[AppError](
-        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sec.last))).onErrorRecover { case _ => () }
-      )
+//      _ <- EitherT.right[AppError](
+//        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sec.head))).onErrorRecover { case _ => () }
+//      )
+//      _ <- EitherT.right[AppError](
+//        Task.fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sec.last))).onErrorRecover { case _ => () }
+//      )
     } yield ()).value
 }
 
