@@ -290,7 +290,7 @@ object Consumer {
       bootstrapServers = List(config.kafkaConfig.server),
       groupId = groupId,
       autoOffsetReset = AutoOffsetReset.Earliest, // the starting offset when there is no offset
-      maxPollInterval = 60 minutes
+      maxPollInterval = 12 hours
       // you can use this settings for At Most Once semantics:
       //     observableCommitOrder = ObservableCommitOrder.BeforeAck
     )
