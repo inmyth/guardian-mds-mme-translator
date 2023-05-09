@@ -21,15 +21,16 @@ import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.language.postfixOps
 
-case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: Store) extends Logging {
+case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: Store, batchSize: Option[Int])
+    extends Logging {
   implicit val scheduler: Scheduler = monix.execution.Scheduler.global
-
-  private val messageFactory  = new ItchMessageFactorySet()
-  val channel: Config.Channel = store.channel
+  private val bs: Int               = batchSize.getOrElse(10000)
+  private val messageFactory        = new ItchMessageFactorySet()
+  val channel: Config.Channel       = store.channel
 
   private val observable: Observable[Either[AppError, Unit]] =
     KafkaConsumerObservable[Array[Byte], Array[Byte]](consumerConfig, List(topic))
-      .take(10000)
+      .take(bs)
       .map(p => (new String(p.key()).toLong, p.value()))
       .mapEval {
         case (seq, bytes) =>
@@ -294,6 +295,6 @@ object Consumer {
       // you can use this settings for At Most Once semantics:
       //     observableCommitOrder = ObservableCommitOrder.BeforeAck
     )
-    new Consumer(consumerConfig = consumerCfg, topic = groupId, store = store)
+    new Consumer(consumerConfig = consumerCfg, topic = groupId, store = store, batchSize = config.kafkaConfig.batchSize)
   }
 }

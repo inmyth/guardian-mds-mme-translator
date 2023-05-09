@@ -25,7 +25,7 @@ object Config {
   implicit val channelConvert: ConfigReader[Channel] = deriveEnumerationReader[Channel]
   implicit val dbTypeConvert: ConfigReader[DbType]   = deriveEnumerationReader[DbType]
 
-  case class KafkaConfig(server: String, topic: Option[String])
+  case class KafkaConfig(server: String, topic: Option[String], batchSize: Option[Int])
 
   case class RedisConfig(host: String, port: Int, password: Option[String])
 
