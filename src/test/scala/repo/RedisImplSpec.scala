@@ -275,9 +275,9 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           id.setAccessible(true)
           id.get(store).asInstanceOf[String]
         }
-        prjKey <- Task(store.keyProjected(symbol))
-        kliKey <- Task(store.keyKlein(symbol))
-        marKey <- Task(store.keyMarketStats(symbol))
+        prjKey <- Task(store.asInstanceOf[RedisImpl].keyProjected(symbol))
+        kliKey <- Task(store.asInstanceOf[RedisImpl].keyKlein(symbol))
+        marKey <- Task(store.asInstanceOf[RedisImpl].keyMarketStats(symbol))
         prjId <- Task(
           com.get
             .xrevrange(prjKey, Range.create("-", "+"), Limit.create(0, 1))

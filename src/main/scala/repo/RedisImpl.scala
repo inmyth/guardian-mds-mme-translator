@@ -21,6 +21,15 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
   private var connection: Option[StatefulRedisConnection[String, String]] = Option.empty
   private var commands: Option[RedisCommands[String, String]]             = Option.empty
 
+  val keyTradableInstrument                = s"${channel.toString}:symbol_reference"
+  val keySecond                            = s"${channel.toString}:second"
+  val keyOrderbook: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
+  val keyTicker: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
+  val keyProjected: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
+  val keyKlein: Instrument => String       = (symbol: Instrument) => s"${channel.toString}:klein:${symbol.value}"
+  val keyMarketStats: Instrument => String = (symbol: Instrument) => s"id:mkt:${symbol.value}"
+  val keyDecimalsInPrice: String           = s"${channel.toString}:decimalsInPrice"
+
   override def connect(): Task[Either[AppError, Unit]] = {
     Try {
       client.connect()

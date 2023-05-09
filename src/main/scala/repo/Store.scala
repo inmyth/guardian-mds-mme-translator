@@ -16,15 +16,6 @@ import org.apache.logging.log4j.scala.Logging
 abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
   import Store._
 
-  val keyTradableInstrument                = s"${channel.toString}:symbol_reference"
-  val keySecond                            = s"${channel.toString}:second"
-  val keyOrderbook: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
-  val keyTicker: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
-  val keyProjected: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
-  val keyKlein: Instrument => String       = (symbol: Instrument) => s"${channel.toString}:klein:${symbol.value}"
-  val keyMarketStats: Instrument => String = (symbol: Instrument) => s"id:mkt:${symbol.value}"
-  val keyDecimalsInPrice: String           = s"${channel.toString}:decimalsInPrice"
-
   def connect(): Task[Either[AppError, Unit]]
 
   def disconnect: Task[Either[AppError, Unit]]
