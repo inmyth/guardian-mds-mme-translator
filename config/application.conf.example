@@ -3,6 +3,7 @@ db-type = "redis"
 kafka-config = {
   server = "172.21.252.175:9092"
   topic = "[optional]topic_from_receiver_or_(set_or_tfex)-(dbtype)"
+  batch-size = 10000
 }
 redis-config = {
   host = "localhost"

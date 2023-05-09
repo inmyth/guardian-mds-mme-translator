@@ -7,7 +7,7 @@ import entity._
 import repo.InMemImpl.{KlineItem, MarketStatsItem, ProjectedItem, TickerItem}
 
 import cats.data.EitherT
-import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId, toBifunctorOps, toTraverseOps}
+import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId, toTraverseOps}
 import com.github.jasync.sql.db.mysql.MySQLConnectionBuilder
 import io.lettuce.core.RedisClient
 import monix.eval.Task
@@ -63,7 +63,6 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
             ref       <- EitherT.rightT[Task, AppError](acts.head)
             maybeItem <- EitherT(getLastOrderbookItem(ref.symbol, decimalsInPrice))
             update    <- EitherT(updateOrderbookAggregate(seq, maybeItem, acts))
-            _         <- EitherT.rightT[Task, AppError](logger.info(update.toString))
             _         <- EitherT(saveOrderbookItem(ref.symbol, orderbookId, update, decimalsInPrice))
           } yield ()
       }

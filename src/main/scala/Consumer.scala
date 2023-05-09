@@ -36,7 +36,6 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
         case (seq, bytes) =>
           (for {
             now <- Task.now(Micro(System.currentTimeMillis() * 1000))
-            _   <- Task.now(logger.info(seq.toString))
             msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
             res <- msg match {
               case a: SecondsMessage => store.saveSecond(a.getSeconds)
@@ -80,7 +79,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                     }
                 } yield ())
                   .recoverWith(p => {
-                    logger.info(p.msg)
+                    logger.error(p.msg)
                     EitherT.rightT[Task, AppError](())
                   })
                   .value
@@ -88,7 +87,6 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
               case a: MarketByPriceMessage =>
                 (for {
                   oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
-                  _ = logger.info(oid.toString)
                   symbol <- EitherT(store.getInstrument(oid))
                   msc    <- EitherT(store.getSecond)
                   mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
@@ -112,7 +110,6 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
                       )
                       .toVector
                   )
-                  _ = logger.info(acts)
                   _ <- EitherT.right[AppError](store.updateOrderbook(seq, oid, acts, dec))
                 } yield ()).value
 
@@ -260,13 +257,7 @@ case class Consumer(consumerConfig: KafkaConsumerConfig, topic: String, store: S
 
               case _ => ().asRight.pure[Task]
             }
-          } yield res).map {
-            case Left(e) =>
-              logger.error(s"Seq: $seq, ${e.msg}")
-              ().asRight
-            case Right(value) =>
-              ().asRight
-          }
+          } yield res)
       }
 
   private val pConsumer: monix.reactive.Consumer[Either[AppError, Unit], Unit] = monix.reactive.Consumer.complete

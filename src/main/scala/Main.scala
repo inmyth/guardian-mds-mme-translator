@@ -4,8 +4,7 @@ import AppError.ConfigError
 import cats.data.EitherT
 import cats.implicits.toBifunctorOps
 import com.guardian
-import com.guardian.Config.DbType
-import com.typesafe.scalalogging.{LazyLogging, Logger}
+import com.typesafe.scalalogging.LazyLogging
 import monix.eval.Task
 import monix.execution.Scheduler
 import pureconfig.ConfigSource
@@ -24,7 +23,6 @@ object Main extends App with LazyLogging {
         .load[Config]
         .leftMap(e => ConfigError(s"Cannot load config: $e"))
     )
-    _ <- EitherT.rightT[Task, AppError](logger.info(conf.toString))
     cons    <- EitherT.rightT[Task, AppError](Consumer.setup(conf))
     _ <- EitherT(cons.connectToStore())
     _ <- EitherT.right[guardian.AppError](cons.run)
