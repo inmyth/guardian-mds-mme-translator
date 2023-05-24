@@ -21,7 +21,7 @@ case class Process(store: Store) extends Logging {
   def process(seq: Long, bytes: Array[Byte]): Task[Either[AppError, Unit]] =
     (for {
       now <- Task.now(Micro(System.currentTimeMillis() * 1000))
-      _ <- Task(logger.info("seq $seq"))
+      _   <- Task(logger.info(s"seq $seq"))
       msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
       res <- msg match {
         case a: SecondsMessage => store.saveSecond(a.getSeconds)
@@ -101,11 +101,11 @@ case class Process(store: Store) extends Logging {
 
         case a: TradeTickerMessageSet =>
           (for {
-            oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+            oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
             symbol <- EitherT(store.getInstrument(oid))
-            msc <- EitherT(store.getSecond)
-            mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
-            dec <- EitherT(store.getDecimalsInPrice(oid))
+            msc    <- EitherT(store.getSecond)
+            mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+            dec    <- EitherT(store.getDecimalsInPrice(oid))
             _ <- EitherT(
               store.updateTicker(
                 oid = oid,
