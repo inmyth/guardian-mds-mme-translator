@@ -121,7 +121,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
                |${p.msg}
                |$item
                |""".stripMargin).getOrElse("Duplicate error")
-          logger.error(m)
+          logger.info(m)
           cur.copy(seq = seq)
         }
         else {

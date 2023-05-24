@@ -287,7 +287,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
             this.q               -> q.value.toString,
             this.s               -> aggressor.toChar.toString,
             this.tq              -> tq.value.toString,
-            this.action          -> action.toChar.toString,
+            this.action          -> action.toString,
             this.tradeReportCode -> tradeReportCode.toString,
             this.dealSource      -> dealSource.toChar.toString,
             this.tss             -> marketTs.value.toString,

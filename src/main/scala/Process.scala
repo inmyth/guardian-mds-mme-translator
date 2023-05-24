@@ -21,6 +21,7 @@ case class Process(store: Store) extends Logging {
   def process(seq: Long, bytes: Array[Byte]): Task[Either[AppError, Unit]] =
     (for {
       now <- Task.now(Micro(System.currentTimeMillis() * 1000))
+      _ <- Task(logger.info("seq $seq"))
       msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
       res <- msg match {
         case a: SecondsMessage => store.saveSecond(a.getSeconds)
@@ -64,7 +65,7 @@ case class Process(store: Store) extends Logging {
               }
           } yield ())
             .recoverWith(p => {
-              logger.error(p.msg)
+              logger.info(p.msg)
               EitherT.rightT[Task, AppError](())
             })
             .value
@@ -100,38 +101,28 @@ case class Process(store: Store) extends Logging {
 
         case a: TradeTickerMessageSet =>
           (for {
-            _ <-
-              if (channel == Channel.fu && a.getDealSource == 4) {
-                EitherT.rightT[Task, AppError](())
-              }
-              else {
-                for {
-                  _ <- EitherT.rightT[Task, AppError](println(msg.getClass))
-
-                  oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
-                  symbol <- EitherT(store.getInstrument(oid))
-                  msc    <- EitherT(store.getSecond)
-                  mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
-                  dec    <- EitherT(store.getDecimalsInPrice(oid))
-                  _ <- EitherT(
-                    store.updateTicker(
-                      oid = oid,
-                      symbol = symbol,
-                      seq = seq,
-                      p = Price(a.getPrice),
-                      q = Qty(a.getQuantity),
-                      aggressor = a.getAggressor,
-                      dealSource = a.getDealSource,
-                      action = a.getAction,
-                      tradeReportCode = a.getTradeReportCode,
-                      dealDateTime = a.getDealDateTime, //nanosec
-                      decimalsInPrice = dec,
-                      marketTs = mms,
-                      bananaTs = now
-                    )
-                  )
-                } yield ()
-              }
+            oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+            symbol <- EitherT(store.getInstrument(oid))
+            msc <- EitherT(store.getSecond)
+            mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+            dec <- EitherT(store.getDecimalsInPrice(oid))
+            _ <- EitherT(
+              store.updateTicker(
+                oid = oid,
+                symbol = symbol,
+                seq = seq,
+                p = Price(a.getPrice),
+                q = Qty(a.getQuantity),
+                aggressor = a.getAggressor,
+                dealSource = a.getDealSource,
+                action = a.getAction,
+                tradeReportCode = a.getTradeReportCode,
+                dealDateTime = a.getDealDateTime, //nanosec
+                decimalsInPrice = dec,
+                marketTs = mms,
+                bananaTs = now
+              )
+            )
           } yield ()).value
 
         case a: EquilibriumPriceMessage =>
@@ -244,7 +235,7 @@ case class Process(store: Store) extends Logging {
 
         case _ =>
           (for {
-            _ <- EitherT.rightT[Task, AppError](logger.error(s"Unparsed message: ${msg.getClass}"))
+            _ <- EitherT.rightT[Task, AppError](logger.info(s"Unparsed message: ${msg.getClass}"))
           } yield ()).value
       }
     } yield res)

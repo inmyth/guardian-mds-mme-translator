@@ -402,7 +402,7 @@ class MySQLImpl(channel: Channel, val connection: Connection) extends Store(chan
           .fromFuture(FutureConverters.asScala(connection.sendPreparedStatement(sql, params.asJava)))
           .onErrorRecoverWith {
             case e =>
-              logger.error(s"""
+              logger.info(s"""
                |$e
                |$sql
                |$params
