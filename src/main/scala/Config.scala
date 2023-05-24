@@ -10,7 +10,8 @@ case class Config(
     redisConfig: RedisConfig,
     mySqlConfig: MySqlConfig,
     channel: Channel,
-    dbType: DbType
+    dbType: DbType,
+    filename: Option[String]
 ) {
 
   def genGroupID: String = {

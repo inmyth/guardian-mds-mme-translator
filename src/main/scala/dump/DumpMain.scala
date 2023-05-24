@@ -1,14 +1,15 @@
 package com.guardian
+package dump
+
 import AppError.ConfigError
 
-import cats.implicits.toBifunctorOps
-import com.typesafe.scalalogging.LazyLogging
+import cats.implicits.{catsSyntaxEitherId, toBifunctorOps}
 import pureconfig.ConfigSource
 import pureconfig.generic.auto._
 import zio.interop.monix._
 import zio.{Scope, ZIO, ZIOAppArgs, ZIOAppDefault}
 
-object Main extends ZIOAppDefault with LazyLogging {
+object DumpMain extends ZIOAppDefault {
 
   override def run: ZIO[Any with ZIOAppArgs with Scope, Any, Any] = {
     for {
@@ -18,9 +19,10 @@ object Main extends ZIOAppDefault with LazyLogging {
           .load[Config]
           .leftMap(e => ConfigError(s"Cannot load config: $e"))
       )
-      cons <- ZIO.succeed(ConsumerService.setup(conf))
-      _    <- ZIO.fromMonixTask(cons.connectToStore())
-      _    <- cons.c.runDrain.provide(cons.consumer)
+      filename <- ZIO.fromEither(conf.filename.fold(ConfigError(s"No file dump").asLeft[String])(p => p.asRight))
+      dumper   <- ZIO.succeed(DumpService.setup(conf, filename))
+      _        <- ZIO.fromMonixTask(dumper.connectToStore())
+      _        <- dumper.p.runDrain
     } yield ()
   }
 }

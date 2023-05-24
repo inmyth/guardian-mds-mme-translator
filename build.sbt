@@ -1,4 +1,4 @@
-ThisBuild / version := "0.593"
+ThisBuild / version := "0.6"
 
 ThisBuild / scalaVersion := "2.13.10"
 
@@ -14,6 +14,10 @@ libraryDependencies += "org.apache.kafka"         %% "kafka-streams-scala" % "3.
 dependencyOverrides += "org.apache.kafka"          % "kafka-clients"       % "3.4.0"
 libraryDependencies += "io.monix"                 %% "monix-kafka-1x"      % "1.0.0-RC6"
 libraryDependencies += "io.monix"                 %% "monix"               % "3.4.1"
+libraryDependencies += "dev.zio"                  %% "zio"                 % "2.0.10"
+libraryDependencies += "dev.zio"                  %% "zio-streams"         % "2.0.10"
+libraryDependencies += "dev.zio"                  %% "zio-kafka"           % "2.1.3"
+libraryDependencies += "dev.zio" %% "zio-interop-monix" % "3.4.2.1.1"
 libraryDependencies += "org.typelevel"            %% "cats-core"           % "2.9.0"
 libraryDependencies += "io.lettuce"                % "lettuce-core"        % "6.2.2.RELEASE"
 libraryDependencies += "com.github.jasync-sql"     % "jasync-mysql"        % "2.1.23"

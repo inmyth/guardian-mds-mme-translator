@@ -58,3 +58,6 @@ project/**/metals.sbt
 /lib
 /config/application.conf
 /config/logback.xml
+*.out
+*.txt
+*.fix

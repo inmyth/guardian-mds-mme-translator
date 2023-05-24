@@ -15,3 +15,4 @@ my-sql-config = {
   user = "admin"
   password = "pass"
 }
+filename = "[optional] dump file path"
