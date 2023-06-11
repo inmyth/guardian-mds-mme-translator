@@ -24,16 +24,16 @@ object Fixtures {
   val bidQty8: Qty      = Qty(650L)
   val bidQty9: Qty      = Qty(600L)
   val bidQty10: Qty     = Qty(550L)
-  val askTime1: Micro   = Micro(1675749643_123456L)
-  val askTime2: Micro   = Micro(1675749645_123456L)
-  val askTime3: Micro   = Micro(1675749647_123456L)
-  val askTime4: Micro   = Micro(1675749649_123456L)
-  val askTime5: Micro   = Micro(1675749651_123456L)
-  val askTime6: Micro   = Micro(1675749653_123456L)
-  val askTime7: Micro   = Micro(1675749655_123456L)
-  val askTime8: Micro   = Micro(1675749657_123456L)
-  val askTime9: Micro   = Micro(1675749659_123456L)
-  val askTime10: Micro  = Micro(1675749661_123456L)
+  val askTime1: Nano    = Nano("1675749643_123456")
+  val askTime2: Nano    = Nano("1675749645_123456")
+  val askTime3: Nano    = Nano("1675749647_123456")
+  val askTime4: Nano    = Nano("1675749649_123456")
+  val askTime5: Nano    = Nano("1675749651_123456")
+  val askTime6: Nano    = Nano("1675749653_123456")
+  val askTime7: Nano    = Nano("1675749655_123456")
+  val askTime8: Nano    = Nano("1675749657_123456")
+  val askTime9: Nano    = Nano("1675749659_123456")
+  val askTime10: Nano   = Nano("1675749661_123456")
 
   val askPrice1: Price  = Price(10200)
   val askPrice2: Price  = Price(10300)
@@ -55,18 +55,18 @@ object Fixtures {
   val askQty8: Qty      = Qty(1650L)
   val askQty9: Qty      = Qty(1700L)
   val askQty10: Qty     = Qty(1750L)
-  val bidTime1: Micro   = Micro(1675751686_123456L)
-  val bidTime2: Micro   = Micro(1675751688_123456L)
-  val bidTime3: Micro   = Micro(1675751690_123456L)
-  val bidTime4: Micro   = Micro(1675751692_123456L)
-  val bidTime5: Micro   = Micro(1675751694_123456L)
-  val bidTime6: Micro   = Micro(1675751696_123456L)
-  val bidTime7: Micro   = Micro(1675751698_123456L)
-  val bidTime8: Micro   = Micro(1675751700_123456L)
-  val bidTime9: Micro   = Micro(1675751702_123456L)
-  val bidTime10: Micro  = Micro(1675751704_123456L)
+  val bidTime1: Nano    = Nano("1675751686_123456")
+  val bidTime2: Nano    = Nano("1675751688_123456")
+  val bidTime3: Nano    = Nano("1675751690_123456")
+  val bidTime4: Nano    = Nano("1675751692_123456")
+  val bidTime5: Nano    = Nano("1675751694_123456")
+  val bidTime6: Nano    = Nano("1675751696_123456")
+  val bidTime7: Nano    = Nano("1675751698_123456")
+  val bidTime8: Nano    = Nano("1675751700_123456")
+  val bidTime9: Nano    = Nano("1675751702_123456")
+  val bidTime10: Nano   = Nano("1675751704_123456")
 
-  val bids: Seq[Some[(Price, Qty, Micro)]] = Vector(
+  val bids: Seq[Some[(Price, Qty, Nano)]] = Vector(
     Some(bidPrice1, bidQty1, bidTime1),
     Some(bidPrice2, bidQty2, bidTime2),
     Some(bidPrice3, bidQty3, bidTime3),
@@ -79,7 +79,7 @@ object Fixtures {
     Some(bidPrice10, bidQty10, bidTime10)
   )
 
-  val asks: Seq[Some[(Price, Qty, Micro)]] = Vector(
+  val asks: Seq[Some[(Price, Qty, Nano)]] = Vector(
     Some(askPrice1, askQty1, askTime1),
     Some(askPrice2, askQty2, askTime2),
     Some(askPrice3, askQty3, askTime3),
@@ -101,8 +101,8 @@ object Fixtures {
   val second: Int                = 1677238290
   val dealDateTime: Long         = 1675763719L
   val tradeTs: Long              = 1675763719123L
-  val marketTs: Micro            = Micro(1675735830_123456L) // Tuesday, February 7, 2023 9:10:30 AM
-  val bananaTs: Micro            = Micro(1675735840_123456L)
+  val marketTs: Nano             = Nano("1675735830_123456789") // Tuesday, February 7, 2023 9:10:30 AM
+  val bananaTs: Micro            = Micro(1675735840_1234L)
   val change                     = 100000L
   val changePercent              = 33
   val secType                    = "equity"
@@ -121,7 +121,7 @@ object Fixtures {
   val contractMultiplier         = 3
   val settlMethod                = "NA"
   val settlPrice: Price          = Price(1200)
-  val decimalsInPrice: Short  = 2
+  val decimalsInPrice: Short     = 2
 
   val t1225: Micro = Micro(1675747530_123456L)
   val t1235: Micro = Micro(1675748130_123456L)
@@ -132,28 +132,28 @@ object Fixtures {
   val t2325: Micro = Micro(1675787106_123456L)
   val t2335: Micro = Micro(1675787706_123456L)
 
-  val openPrice1: Price = Price(10000)
-  val closePrice1: Price = Price(11000)
-  val openPrice2: Price = Price(12000)
-  val closePrice2: Price = Price(13000)
-  val nightOpenPrice: Price = Price(14000)
+  val openPrice1: Price      = Price(10000)
+  val closePrice1: Price     = Price(11000)
+  val openPrice2: Price      = Price(12000)
+  val closePrice2: Price     = Price(13000)
+  val nightOpenPrice: Price  = Price(14000)
   val nightClosePrice: Price = Price(15000)
-  val openPriceA: Price8 = Price8(10000L)
-  val openPriceB: Price8 = Price8(12000L)
-  val closePriceA: Price8 = Price8(8000L)
-  val closePriceB: Price8 = Price8(9000L)
-  val highPriceA: Price8 = Price8(19000L)
-  val highPriceB: Price8 = Price8(21000L)
-  val lowPriceA: Price8 = Price8(7000L)
-  val lowPriceB: Price8 = Price8(6000L)
-  val prevCloseA: Price8 = Price8(7500L)
-  val prevCloseB: Price8 = Price8(8500L)
-  val tradedVolA: Qty = Qty(56000000L)
-  val tradedVolB: Qty = Qty(6670000L)
-  val tradedValA: Price8 = Price8(6845460000L)
-  val tradedValB: Price8 = Price8(973330000L)
-  val changeA: Price8 = Price8(3005656L)
-  val changeB: Price8 = Price8(6780000L)
+  val openPriceA: Price8     = Price8(10000L)
+  val openPriceB: Price8     = Price8(12000L)
+  val closePriceA: Price8    = Price8(8000L)
+  val closePriceB: Price8    = Price8(9000L)
+  val highPriceA: Price8     = Price8(19000L)
+  val highPriceB: Price8     = Price8(21000L)
+  val lowPriceA: Price8      = Price8(7000L)
+  val lowPriceB: Price8      = Price8(6000L)
+  val prevCloseA: Price8     = Price8(7500L)
+  val prevCloseB: Price8     = Price8(8500L)
+  val tradedVolA: Qty        = Qty(56000000L)
+  val tradedVolB: Qty        = Qty(6670000L)
+  val tradedValA: Price8     = Price8(6845460000L)
+  val tradedValB: Price8     = Price8(973330000L)
+  val changeA: Price8        = Price8(3005656L)
+  val changeB: Price8        = Price8(6780000L)
 
   val action: FlatPriceLevelAction = FlatPriceLevelAction(
     oid = oid,

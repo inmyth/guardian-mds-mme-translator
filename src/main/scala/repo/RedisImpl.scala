@@ -2,7 +2,7 @@ package com.guardian
 package repo
 
 import AppError.{RedisConnectionError, SecondNotFound, SymbolNotFound}
-import Config.{Channel, DbType}
+import Config.Channel
 import entity._
 
 import cats.data.EitherT
@@ -17,18 +17,19 @@ import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsJava, MapHa
 import scala.util.matching.Regex
 import scala.util.{Failure, Success, Try}
 
-class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, DbType.redis) {
+class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   private var connection: Option[StatefulRedisConnection[String, String]] = Option.empty
   private var commands: Option[RedisCommands[String, String]]             = Option.empty
 
-  val keyTradableInstrument                = s"${channel.toString}:symbol_reference"
-  val keySecond                            = s"${channel.toString}:second"
-  val keyOrderbook: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
-  val keyTicker: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
-  val keyProjected: Instrument => String   = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
-  val keyKlein: Instrument => String       = (symbol: Instrument) => s"${channel.toString}:klein:${symbol.value}"
-  val keyMarketStats: Instrument => String = (symbol: Instrument) => s"id:mkt:${symbol.value}"
-  val keyDecimalsInPrice: String           = s"${channel.toString}:decimalsInPrice"
+  val keyTradableInstrument                   = s"${channel.toString}:symbol_reference"
+  val keySecond                               = s"${channel.toString}:second"
+  val keyOrderbook: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
+  val keyTicker: Instrument => String         = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
+  val keyProjected: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
+  val keyStat: Instrument => String           = (symbol: Instrument) => s"${channel.toString}:stat:${symbol.value}"
+  val keyMarketStats: Instrument => String    = (symbol: Instrument) => s"id:mkt:${symbol.value}"
+  val keyDecimalsInPrice: String              = s"${channel.toString}:decimalsInPrice"
+  val keyReferencePrice: Instrument => String = (symbol: Instrument) => s"${channel.toString}:refprice:${symbol.value}"
 
   override def connect(): Task[Either[AppError, Unit]] = {
     Try {
@@ -87,7 +88,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       contractMultiplier: Int,
       settlMethod: String,
       decimalsInPrice: Short,
-      marketTs: Micro
+      marketTs: Nano
   ): Task[Either[AppError, Unit]] =
     (for {
       _ <- EitherT.rightT[Task, AppError](commands.get.hset(keyTradableInstrument, oid.value.toString, symbol.value))
@@ -140,6 +141,15 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       .flatMap(p => Option(p).filter(_.trim.nonEmpty))
       .map(p => Micro(p.toLong))
 
+  private val mapToNano: (mutable.Map[String, String], String) => Array[Nano] = (map, key) =>
+    map
+      .get(key)
+      .flatMap(p => bracketPattern findFirstIn p)
+      .getOrElse("")
+      .split(",")
+      .flatMap(p => Option(p).filter(_.trim.nonEmpty))
+      .map(p => Nano(p))
+
   override def getLastOrderbookItem(
       symbol: Instrument,
       decimalsInPrice: Short
@@ -155,14 +165,14 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
             val body      = p.getBody.asScala
             val seq       = body.getOrElse(id, "-1").toLong
             val maxLevel  = body.getOrElse(this.maxLevel, "10").toInt
-            val marketTs  = Micro(body.getOrElse(this.tss, "0").toLong)
+            val marketTs  = Nano(body.getOrElse(this.tss, "0"))
             val bananaTs  = Micro(body.getOrElse(this.tsb, "0").toLong)
             val askPrices = mapToPrices(body, a, decimalsInPrice)
             val bidPrices = mapToPrices(body, b, decimalsInPrice)
             val askQtys   = mapToQty(body, aq)
             val bidQtys   = mapToQty(body, bq)
-            val askTimes  = mapToMicro(body, at)
-            val bidTimes  = mapToMicro(body, bt)
+            val askTimes  = mapToNano(body, at)
+            val bidTimes  = mapToNano(body, bt)
             val asks = askPrices
               .zip(askQtys)
               .zip(askTimes)
@@ -204,19 +214,19 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
         val maxLevel = item.maxLevel
         val aTup = item.asks.map {
           case Some(value) => (Store.intToBigDecimal(value._1.value, decimalsInPrice), value._2, value._3)
-          case None        => (0.0f, Qty(0L), Micro(0L))
+          case None        => (0.0f, Qty(0L), Nano("0"))
         }
         val a  = s"""[${aTup.map(_._1).mkString(",")}]"""
         val aq = s"""[${aTup.map(_._2.value).mkString(",")}]"""
         val at = s"""[${aTup.map(_._3.value).mkString(",")}]"""
         val bTup = item.bids.map {
           case Some(value) => (Store.intToBigDecimal(value._1.value, decimalsInPrice), value._2, value._3)
-          case None        => (0.0f, Qty(0L), Micro(0L))
+          case None        => (0.0f, Qty(0L), Nano("0"))
         }
         val b        = s"""[${bTup.map(_._1).mkString(",")}]"""
         val bq       = s"""[${bTup.map(_._2.value).mkString(",")}]"""
         val bt       = s"""[${bTup.map(_._3.value).mkString(",")}]"""
-        val marketTs = item.marketTs.value.toString
+        val marketTs = item.marketTs.value
         val bananaTs = item.bananaTs.value.toString
         commands.get.xadd(
           obk,
@@ -273,7 +283,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       tradeReportCode: Short,
       dealDateTime: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
@@ -290,7 +300,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
             this.action          -> action.toString,
             this.tradeReportCode -> tradeReportCode.toString,
             this.dealSource      -> dealSource.toChar.toString,
-            this.tss             -> marketTs.value.toString,
+            this.tss             -> marketTs.value,
             this.tsb             -> bananaTs.value.toString
           ).asJava
         )
@@ -309,7 +319,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       tradeReportCode: Short,
       dealDateTime: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
@@ -347,7 +357,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       q: Qty,
       ib: Qty,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
@@ -360,22 +370,25 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
             this.p   -> Store.intToBigDecimal(p.value, decimalsInPrice).toString,
             this.q   -> q.value.toString,
             this.ib  -> ib.value.toString,
-            this.tss -> marketTs.value.toString,
+            this.tss -> marketTs.value,
             this.tsb -> bananaTs.value.toString
           ).asJava
         )
       }
     } yield ()).value
 
-  val o             = "o"
-  val h             = "h"
-  val l             = "l"
-  val c             = "c"
-  val lastAuctionPx = "lauctpx"
-  val avgpx         = "avgpx"
-  val turnOverQty   = "val"
-
-  override def updateKline(
+  val o                   = "o"
+  val h                   = "h"
+  val l                   = "l"
+  val c                   = "c"
+  val lastAuctionPx       = "lauctpx"
+  val avgpx               = "avgpx"
+  val turnOverQty         = "turnover_qty"
+  val turnOverVal         = "turnover_val"
+  val reportedTurnOverQty = "reported_turnover_qty"
+  val reportedTurnOverVal = "reported_turnover_val"
+  val totalNumberTrades   = "total_number_trades"
+  override def updateTradeStat(
       oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
@@ -386,25 +399,33 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       lastAuctionPx: Price,
       avgpx: Price,
       turnOverQty: Qty,
+      turnOverVal: Price8,
+      reportedTurnOverQty: Qty,
+      reportedTurnOverVal: Price8,
+      totalNumberTrades: Qty,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
-      klk <- EitherT.rightT[Task, AppError](keyKlein(symbol))
+      klk <- EitherT.rightT[Task, AppError](keyStat(symbol))
       _ <- EitherT.rightT[Task, AppError] {
         commands.get.xadd(
           klk,
           Map(
-            this.o             -> Store.intToBigDecimal(o.value, decimalsInPrice).toString(),
-            this.h             -> Store.intToBigDecimal(h.value, decimalsInPrice).toString(),
-            this.l             -> Store.intToBigDecimal(l.value, decimalsInPrice).toString(),
-            this.c             -> Store.intToBigDecimal(c.value, decimalsInPrice).toString(),
-            this.lastAuctionPx -> Store.intToBigDecimal(lastAuctionPx.value, decimalsInPrice).toString(),
-            this.avgpx         -> Store.intToBigDecimal(avgpx.value, decimalsInPrice).toString(),
-            this.turnOverQty   -> turnOverQty.value.toString,
-            this.tss           -> marketTs.value.toString,
-            this.tsb           -> bananaTs.value.toString
+            this.o                   -> Store.intToBigDecimal(o.value, decimalsInPrice).toString(),
+            this.h                   -> Store.intToBigDecimal(h.value, decimalsInPrice).toString(),
+            this.l                   -> Store.intToBigDecimal(l.value, decimalsInPrice).toString(),
+            this.c                   -> Store.intToBigDecimal(c.value, decimalsInPrice).toString(),
+            this.lastAuctionPx       -> Store.intToBigDecimal(lastAuctionPx.value, decimalsInPrice).toString(),
+            this.avgpx               -> Store.intToBigDecimal(avgpx.value, decimalsInPrice).toString(),
+            this.turnOverQty         -> turnOverQty.value.toString,
+            this.turnOverVal         -> turnOverQty.value.toString,
+            this.reportedTurnOverQty -> reportedTurnOverQty.value.toString,
+            this.reportedTurnOverVal -> reportedTurnOverVal.value.toString,
+            this.totalNumberTrades   -> totalNumberTrades.value.toString,
+            this.tss                 -> marketTs.value,
+            this.tsb                 -> bananaTs.value.toString
           ).asJava
         )
       }
@@ -414,7 +435,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
   private val tradedVolume  = "vol"
   private val tradeValue    = "val"
   private val change        = "change"
-  private val changePercent = "changePercent"
+  private val changePercent = "change_percent"
   override def updateMarketStats(
       oid: OrderbookId,
       symbol: Instrument,
@@ -430,7 +451,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
       changePercent: Int,
       tradeTs: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
@@ -448,7 +469,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
             this.tradeValue    -> tradedValue.value.toString,
             this.change        -> Store.longToBigDecimal(change.value, decimalsInPrice).toString,
             this.changePercent -> Store.intToBigDecimal(changePercent, decimalsInPrice).toString,
-            this.tss           -> marketTs.value.toString,
+            this.tss           -> marketTs.value,
             this.tsb           -> bananaTs.value.toString
           ).asJava
         )
@@ -464,7 +485,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
 
   override def updateMySqlSettlementPrice(
       oid: OrderbookId,
-      marketTs: Micro,
+      marketTs: Nano,
       settlPrice: Price,
       decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
@@ -482,4 +503,29 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel, Db
           .fold(1.asInstanceOf[Short].asRight)(p => p.toShort.asRight)
       )
     } yield res).value
+
+  val priceType = "price_type"
+  val price     = "price"
+  override def updateReferencePrice(
+      oid: OrderbookId,
+      symbol: Instrument,
+      priceType: Byte,
+      price: Price,
+      marketTs: Nano,
+      bananaTs: Micro
+  ): Task[Either[AppError, Unit]] =
+    (for {
+      klk <- EitherT.rightT[Task, AppError](keyReferencePrice(symbol))
+      _ <- EitherT.rightT[Task, AppError] {
+        commands.get.xadd(
+          klk,
+          Map(
+            this.priceType -> priceType.toChar.toString,
+            this.price     -> price.value.toString,
+            this.tss       -> marketTs.value,
+            this.tsb       -> bananaTs.value.toString
+          ).asJava
+        )
+      }
+    } yield ()).value
 }

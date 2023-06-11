@@ -1,7 +1,6 @@
 package com.guardian
 package dump
 
-import Config.DbType
 import repo.Store
 
 import monix.eval.Task
@@ -41,10 +40,7 @@ object DumpService {
     data
   }
   def setup(config: Config, filename: String): DumpService = {
-    val store = config.dbType match {
-      case DbType.redis => Store.redis(config.channel, config.redisConfig)
-      case DbType.mysql => Store.mysql(config.channel, config.mySqlConfig)
-    }
+    val store = Store.redis(config.channel, config.redisConfig)
     val process = Process(store)
     new DumpService(
       filename = filename,

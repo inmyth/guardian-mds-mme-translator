@@ -2,18 +2,17 @@ package com.guardian
 package repo
 
 import AppError.{SecondNotFound, SymbolNotFound}
-import Config.{Channel, DbType, MySqlConfig, RedisConfig}
+import Config.{Channel, RedisConfig}
 import entity._
-import repo.InMemImpl.{KlineItem, MarketStatsItem, ProjectedItem, TickerItem}
+import repo.InMemImpl._
 
 import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId, toTraverseOps}
-import com.github.jasync.sql.db.mysql.MySQLConnectionBuilder
 import io.lettuce.core.RedisClient
 import monix.eval.Task
 import org.apache.logging.log4j.scala.Logging
 
-abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
+abstract class Store(val channel: Channel) extends Logging {
   import Store._
 
   def connect(): Task[Either[AppError, Unit]]
@@ -43,7 +42,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       contractMultiplier: Int,
       settlMethod: String,
       decimalsInPrice: Short,
-      marketTs: Micro
+      marketTs: Nano
   ): Task[Either[AppError, Unit]]
   def getInstrument(orderbookId: OrderbookId): Task[Either[AppError, Instrument]]
 
@@ -54,18 +53,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
     (for {
-      _ <- dbType match {
-        case DbType.redis =>
-          EitherT
-            .right[AppError](acts.map(p => updateOrderbookNonAggregate(seq, orderbookId, p, decimalsInPrice)).sequence)
-        case DbType.mysql =>
-          for {
-            ref       <- EitherT.rightT[Task, AppError](acts.head)
-            maybeItem <- EitherT(getLastOrderbookItem(ref.symbol, decimalsInPrice))
-            update    <- EitherT(updateOrderbookAggregate(seq, maybeItem, acts))
-            _         <- EitherT(saveOrderbookItem(ref.symbol, orderbookId, update, decimalsInPrice))
-          } yield ()
-      }
+      _ <- EitherT.right[AppError](acts.map(p => updateOrderbookNonAggregate(seq, orderbookId, p, decimalsInPrice)).sequence)
     } yield ()).value
 
   def updateOrderbookNonAggregate(
@@ -162,7 +150,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       tradeReportCode: Short,
       dealDateTime: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
 
@@ -178,7 +166,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       tradeReportCode: Short,
       dealDateTime: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
 
@@ -190,11 +178,11 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       q: Qty,
       ib: Qty,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
 
-  def updateKline(
+  def updateTradeStat(
       oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
@@ -205,8 +193,12 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       lastAuctionPx: Price,
       avgpx: Price,
       turnOverQty: Qty,
+      turnOverVal: Price8,
+      reportedTurnOverQty: Qty,
+      reportedTurnOverVal: Price8,
+      totalNumberTrades: Qty,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
 
@@ -225,7 +217,7 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
       changePercent: Int,
       tradeTs: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
 
@@ -237,26 +229,36 @@ abstract class Store(val channel: Channel, dbType: DbType) extends Logging {
 
   def updateMySqlSettlementPrice(
       oid: OrderbookId,
-      marketTs: Micro,
+      marketTs: Nano,
       settlPrice: Price,
       decimalsInPrice: Short
+  ): Task[Either[AppError, Unit]]
+
+  def updateReferencePrice(
+      oid: OrderbookId,
+      symbol: Instrument,
+      priceType: Byte,
+      price: Price,
+      marketTs: Nano,
+      bananaTs: Micro
   ): Task[Either[AppError, Unit]]
 
   def saveDecimalsInPrice(oid: OrderbookId, d: Short): Task[Either[AppError, Unit]]
   def getDecimalsInPrice(oid: OrderbookId): Task[Either[AppError, Short]]
 }
 
-class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
+class InMemImpl(channel: Channel) extends Store(channel) {
 
-  private var marketSecondDb: Option[Int]                         = None
-  private var symbolReferenceDb: Map[OrderbookId, Instrument]     = Map.empty
-  private var orderbookDb: Map[String, Vector[OrderbookItem]]     = Map.empty
-  private var tickerDb: Map[String, Vector[TickerItem]]           = Map.empty
-  private var projectedDb: Map[String, Vector[ProjectedItem]]     = Map.empty
-  var klineDb: Map[String, Vector[KlineItem]]                     = Map.empty
-  private var marketStatsDb: Map[String, Vector[MarketStatsItem]] = Map.empty
-  private var decimalsInPriceDb: Map[OrderbookId, Short]          = Map.empty
-  override def connect(): Task[Either[AppError, Unit]]            = ().asRight.pure[Task]
+  private var marketSecondDb: Option[Int]                                    = None
+  private var symbolReferenceDb: Map[OrderbookId, Instrument]                = Map.empty
+  private var orderbookDb: Map[String, Vector[OrderbookItem]]                = Map.empty
+  private var tickerDb: Map[String, Vector[TickerItem]]                      = Map.empty
+  private var projectedDb: Map[String, Vector[ProjectedItem]]                = Map.empty
+  var klineDb: Map[String, Vector[KlineItem]]                                = Map.empty
+  private var marketStatsDb: Map[String, Vector[MarketStatsItem]]            = Map.empty
+  private var decimalsInPriceDb: Map[OrderbookId, Short]                     = Map.empty
+  private var referencePriceDb: Map[OrderbookId, Vector[ReferencePriceItem]] = Map.empty
+  override def connect(): Task[Either[AppError, Unit]]                       = ().asRight.pure[Task]
 
   override def disconnect: Task[Either[AppError, Unit]] = ().asRight.pure[Task]
 
@@ -279,7 +281,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       contractMultiplier: Int,
       settlMethod: String,
       decimalsInPrice: Short,
-      marketTs: Micro
+      marketTs: Nano
   ): Task[Either[AppError, Unit]] = {
     symbolReferenceDb = symbolReferenceDb + (oid -> symbol)
     ().asRight.pure[Task]
@@ -317,7 +319,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       tradeReportCode: Short,
       dealDateTime: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
     (for {
@@ -376,7 +378,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       tradeReportCode: Short,
       dealDateTime: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
     val list = tickerDb.getOrElse(symbol.value, Vector.empty)
@@ -405,7 +407,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       q: Qty,
       ib: Qty,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
     val list = projectedDb.getOrElse(symbol.value, Vector.empty)
@@ -422,7 +424,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
     ().asRight[AppError].pure[Task]
   }
 
-  override def updateKline(
+  override def updateTradeStat(
       oid: OrderbookId,
       symbol: Instrument,
       seq: Long,
@@ -433,8 +435,12 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       lastAuctionPx: Price,
       avgpx: Price,
       turnOverQty: Qty,
+      turnOverVal: Price8,
+      reportedTurnOverQty: Qty,
+      reportedTurnOverVal: Price8,
+      totalNumberTrades: Qty,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
     val list = klineDb.getOrElse(symbol.value, Vector.empty)
@@ -447,6 +453,10 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
         c = c,
         lauctpx = lastAuctionPx,
         turnOverQty = turnOverQty,
+        turnOverVal = turnOverVal,
+        reportedTurnOverQty = reportedTurnOverQty,
+        reportedTurnOverVal = reportedTurnOverVal,
+        totalNumberTrades = totalNumberTrades,
         avgpx = avgpx,
         marketTs = marketTs,
         bananaTs = bananaTs
@@ -470,7 +480,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
       changePercent: Int,
       tradeTs: Long,
       decimalsInPrice: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
     val list = marketStatsDb.getOrElse(symbol.value, Vector.empty)
@@ -502,7 +512,7 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
 
   override def updateMySqlSettlementPrice(
       oid: OrderbookId,
-      marketTs: Micro,
+      marketTs: Nano,
       settlPrice: Price,
       decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
@@ -513,6 +523,27 @@ class InMemImpl(channel: Channel) extends Store(channel, DbType.redis) {
 
   override def saveDecimalsInPrice(oid: OrderbookId, d: Short): Task[Either[AppError, Unit]] = {
     decimalsInPriceDb += (oid -> d)
+    ().asRight.pure[Task]
+  }
+
+  override def updateReferencePrice(
+      oid: OrderbookId,
+      symbol: Instrument,
+      priceType: Byte,
+      price: Price,
+      marketTs: Nano,
+      bananaTs: Micro
+  ): Task[Either[AppError, Unit]] = {
+    val list = referencePriceDb.getOrElse(oid, Vector.empty)
+    referencePriceDb += (oid -> (Vector(
+      ReferencePriceItem(
+        oid = oid,
+        priceType = priceType,
+        price = price,
+        marketTs = marketTs,
+        bananaTs = bananaTs
+      )
+    ) ++ list))
     ().asRight.pure[Task]
   }
 }
@@ -527,7 +558,7 @@ object InMemImpl {
       dealSource: Byte,
       action: Byte,
       tradeReportCode: Short,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   )
   case class ProjectedItem(
@@ -535,7 +566,7 @@ object InMemImpl {
       p: Price,
       q: Qty,
       ib: Qty,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro
   )
 
@@ -548,7 +579,11 @@ object InMemImpl {
       lauctpx: Price,
       avgpx: Price,
       turnOverQty: Qty,
-      marketTs: Micro,
+      turnOverVal: Price8,
+      reportedTurnOverQty: Qty,
+      reportedTurnOverVal: Price8,
+      totalNumberTrades: Qty,
+      marketTs: Nano,
       bananaTs: Micro
   )
   case class MarketStatsItem(
@@ -563,7 +598,15 @@ object InMemImpl {
       change: Price8,
       changePercent: Int,
       tradeTs: Long,
-      marketTs: Micro,
+      marketTs: Nano,
+      bananaTs: Micro
+  )
+
+  case class ReferencePriceItem(
+      oid: OrderbookId,
+      priceType: Byte,
+      price: Price,
+      marketTs: Nano,
       bananaTs: Micro
   )
 }
@@ -573,7 +616,7 @@ object Store {
   def buildPriceLevels(
       base: OrderbookItem,
       item: FlatPriceLevelAction
-  ): Either[AppError, Seq[Option[(Price, Qty, Micro)]]] =
+  ): Either[AppError, Seq[Option[(Price, Qty, Nano)]]] =
     item.levelUpdateAction match {
       case 'N' => base.insert(item.price, item.qty, item.marketTs, item.level, item.side).asRight
       case 'D' => base.delete(side = item.side, level = item.level, numDeletes = item.numDeletes).asRight
@@ -587,14 +630,4 @@ object Store {
 
   def redis(channel: Channel, redisConfig: RedisConfig): Store =
     new RedisImpl(channel, RedisClient.create(s"redis://${redisConfig.host}:${redisConfig.port}"))
-
-  def mysql(channel: Channel, mySqlConfig: MySqlConfig): Store = {
-    var url = s"jdbc:mysql://${mySqlConfig.host}:${mySqlConfig.port}/mdsdb"
-    if (mySqlConfig.user.isDefined && mySqlConfig.password.isDefined) {
-      val extra = s"?user=${mySqlConfig.user.get}&password=${mySqlConfig.password.get}"
-      url = url + extra
-    }
-    val connection = MySQLConnectionBuilder.createConnectionPool(url)
-    new MySQLImpl(channel, connection)
-  }
 }

@@ -2,7 +2,7 @@ package com.guardian
 package repo
 
 import Fixtures._
-import entity.{Micro, Price, Qty}
+import entity.{Micro, Nano, Price, Qty}
 
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
@@ -14,7 +14,7 @@ class OrderbookItemSpec extends AsyncWordSpec with Matchers {
     "return new list with new element" in {
       val newPrice = Price(107)
       val newQty   = Qty(400L)
-      val serverTs = Micro(1675752890L)
+      val serverTs = Nano("1675752890")
       val levels   = List(1, maxLevel / 2, maxLevel)
       val expecteds = levels.map(level => {
         val (a, b) = bids.splitAt(level - 1)
@@ -60,7 +60,7 @@ class OrderbookItemSpec extends AsyncWordSpec with Matchers {
         val level    = 2
         val newPrice = Price(400)
         val newQty   = Qty(1500L)
-        val serverTs = Micro(1675752890L)
+        val serverTs = Nano("1675752890")
         val actual   = orderbookItem.update(side, level, newPrice, newQty, serverTs)
         val expected = bids.updated(1, Some((newPrice, newQty, serverTs)))
         actual shouldBe Right(expected)
@@ -76,7 +76,7 @@ object OrderbookItemSpec {
     maxLevel = maxLevel,
     bids = bids,
     asks = asks,
-    marketTs = Micro(0L),
+    marketTs = Nano("0"),
     bananaTs = Micro(0L)
   )
 }

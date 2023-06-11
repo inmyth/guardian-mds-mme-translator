@@ -1,21 +1,21 @@
 package com.guardian
 package repo
 
-import entity.{Micro, Price, Qty, Side}
+import AppError.OrderbookUpdateError
+import entity._
 
 import cats.implicits.catsSyntaxEitherId
-import com.guardian.AppError.OrderbookUpdateError
 
 private[repo] case class OrderbookItem(
     seq: Long,
     maxLevel: Int,
-    bids: Seq[Option[(Price, Qty, Micro)]],
-    asks: Seq[Option[(Price, Qty, Micro)]],
-    marketTs: Micro,
+    bids: Seq[Option[(Price, Qty, Nano)]],
+    asks: Seq[Option[(Price, Qty, Nano)]],
+    marketTs: Nano,
     bananaTs: Micro
 ) {
 
-  def insert(price: Price, qty: Qty, sourceTs: Micro, level: Int, side: Side): Seq[Option[(Price, Qty, Micro)]] = {
+  def insert(price: Price, qty: Qty, sourceTs: Nano, level: Int, side: Side): Seq[Option[(Price, Qty, Nano)]] = {
     val index = level - 1
     val current = side.value.toChar match {
       case 'B' => bids
@@ -26,7 +26,7 @@ private[repo] case class OrderbookItem(
     res.dropRight(res.size - maxLevel)
   }
 
-  def delete(side: Side, level: Int, numDeletes: Int): Seq[Option[(Price, Qty, Micro)]] = {
+  def delete(side: Side, level: Int, numDeletes: Int): Seq[Option[(Price, Qty, Nano)]] = {
     val index = level - 1
     val current = side.value.toChar match {
       case 'B' => bids
@@ -43,8 +43,8 @@ private[repo] case class OrderbookItem(
       level: Int,
       price: Price,
       qty: Qty,
-      marketTs: Micro
-  ): Either[AppError, Seq[Option[(Price, Qty, Micro)]]] = {
+      marketTs: Nano
+  ): Either[AppError, Seq[Option[(Price, Qty, Nano)]]] = {
     val index = level - 1
     val current = side.value.toChar match {
       case 'B' => bids
@@ -61,11 +61,11 @@ private[repo] case class OrderbookItem(
 
 object OrderbookItem {
   def reconstruct(
-      list: Seq[Option[(Price, Qty, Micro)]],
+      list: Seq[Option[(Price, Qty, Nano)]],
       side: Byte,
       seq: Long,
       maxLevel: Int,
-      marketTs: Micro,
+      marketTs: Nano,
       bananaTs: Micro,
       origin: OrderbookItem
   ): OrderbookItem = {
@@ -82,7 +82,7 @@ object OrderbookItem {
       maxLevel = maxLevel,
       bids = Vector.empty,
       asks = Vector.empty,
-      marketTs = Micro(0L),
+      marketTs = Nano("0"),
       bananaTs = Micro(0L)
     )
 }

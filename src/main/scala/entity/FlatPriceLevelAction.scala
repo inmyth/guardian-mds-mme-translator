@@ -6,7 +6,7 @@ import genium.trading.itch42.messages.PriceLevelItem
 case class FlatPriceLevelAction(
     oid: OrderbookId,
     symbol: Instrument,
-    marketTs: Micro,
+    marketTs: Nano,
     bananaTs: Micro,
     maxLevel: Byte,
     price: Price,
@@ -22,7 +22,7 @@ object FlatPriceLevelAction {
   def apply(
       oid: OrderbookId,
       symbol: Instrument,
-      sourceTs: Micro,
+      sourceTs: Nano,
       serverTs: Micro,
       maxLevel: Byte,
       item: PriceLevelItem

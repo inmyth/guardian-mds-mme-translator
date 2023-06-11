@@ -1,6 +1,5 @@
 package com.guardian
 
-import Config.DbType
 import repo.Store
 
 import monix.eval.Task
@@ -51,10 +50,7 @@ case class ConsumerService(consumerConfig: KafkaConsumerConfig, topic: String, p
 object ConsumerService {
 
   def setup(config: Config): ConsumerService = {
-    val store = config.dbType match {
-      case DbType.redis => Store.redis(config.channel, config.redisConfig)
-      case DbType.mysql => Store.mysql(config.channel, config.mySqlConfig)
-    }
+    val store = Store.redis(config.channel, config.redisConfig)
     val groupId = config.kafkaConfig.topic.getOrElse(config.genGroupID)
     val consumerCfg = KafkaConsumerConfig.default.copy(
       bootstrapServers = List(config.kafkaConfig.server),

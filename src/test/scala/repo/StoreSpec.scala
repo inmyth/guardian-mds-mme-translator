@@ -196,7 +196,7 @@ class StoreSpec extends AsyncWordSpec with Matchers {
     }
     "updateKline" in {
       (for {
-        _ <- store.updateKline(
+        _ <- store.updateTradeStat(
           oid = oid,
           symbol = symbol,
           seq = seq,
@@ -207,6 +207,10 @@ class StoreSpec extends AsyncWordSpec with Matchers {
           lastAuctionPx = askPrice5,
           avgpx = askPrice6,
           turnOverQty = askQty1,
+          turnOverVal = openPriceA,
+          reportedTurnOverQty = askQty1,
+          reportedTurnOverVal = openPriceB,
+          totalNumberTrades = askQty2,
           decimalsInPrice = decimalsInPrice,
           marketTs = marketTs,
           bananaTs = bananaTs
@@ -227,6 +231,10 @@ class StoreSpec extends AsyncWordSpec with Matchers {
             lauctpx = askPrice5,
             avgpx = askPrice6,
             turnOverQty = askQty1,
+            turnOverVal = openPriceA,
+            reportedTurnOverQty = askQty1,
+            reportedTurnOverVal = openPriceB,
+            totalNumberTrades = askQty2,
             marketTs = marketTs,
             bananaTs = bananaTs
           )

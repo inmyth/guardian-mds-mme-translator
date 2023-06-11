@@ -29,7 +29,7 @@ case class Process(store: Store) extends Logging {
         case a: OrderBookDirectoryMessageSetImpl =>
           (for {
             msc <- EitherT(store.getSecond)
-            mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+            ns  <- EitherT.rightT[Task, AppError](Nano.fromSecondAndNano(msc, a.getNanos))
             _ <-
               if (channel == Channel.fu && a.getMarketCode == 11) { // block underlyings in futures
                 EitherT.rightT[Task, AppError](())
@@ -57,7 +57,7 @@ case class Process(store: Store) extends Logging {
                       contractMultiplier = a.getContractSize,
                       settlMethod = "NA",
                       decimalsInPrice = a.getDecimalsInPrice,
-                      marketTs = mms
+                      marketTs = ns
                     )
                   )
                   _ <- EitherT(store.saveDecimalsInPrice(oid, a.getDecimalsInPrice))
@@ -75,7 +75,7 @@ case class Process(store: Store) extends Logging {
             oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
             symbol <- EitherT(store.getInstrument(oid))
             msc    <- EitherT(store.getSecond)
-            mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+            ns     <- EitherT.rightT[Task, AppError](Nano.fromSecondAndNano(msc, a.getNanos))
             dec    <- EitherT(store.getDecimalsInPrice(oid))
             acts <- EitherT.rightT[Task, AppError](
               a.getItems.asScala
@@ -83,7 +83,7 @@ case class Process(store: Store) extends Logging {
                   FlatPriceLevelAction(
                     oid = OrderbookId(a.getOrderBookId),
                     symbol = symbol,
-                    marketTs = mms,
+                    marketTs = ns,
                     bananaTs = now,
                     maxLevel = a.getMaximumLevel,
                     price = Price(p.getPrice),
@@ -104,7 +104,7 @@ case class Process(store: Store) extends Logging {
             oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
             symbol <- EitherT(store.getInstrument(oid))
             msc    <- EitherT(store.getSecond)
-            mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+            ns     <- EitherT.rightT[Task, AppError](Nano.fromSecondAndNano(msc, a.getNanos))
             dec    <- EitherT(store.getDecimalsInPrice(oid))
             _ <- EitherT(
               store.updateTicker(
@@ -119,7 +119,7 @@ case class Process(store: Store) extends Logging {
                 tradeReportCode = a.getTradeReportCode,
                 dealDateTime = a.getDealDateTime, //nanosec
                 decimalsInPrice = dec,
-                marketTs = mms,
+                marketTs = ns,
                 bananaTs = now
               )
             )
@@ -130,7 +130,7 @@ case class Process(store: Store) extends Logging {
             oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
             symbol <- EitherT(store.getInstrument(oid))
             msc    <- EitherT(store.getSecond)
-            mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+            ns     <- EitherT.rightT[Task, AppError](Nano.fromSecondAndNano(msc, a.getNanos))
             matchedVol <- EitherT.rightT[Task, AppError](
               Qty(if (a.getAskQuantity < a.getBidQuantity) a.getAskQuantity else a.getBidQuantity)
             )
@@ -145,7 +145,7 @@ case class Process(store: Store) extends Logging {
                 q = matchedVol,
                 ib = imbalanceQty,
                 decimalsInPrice = dec,
-                marketTs = mms,
+                marketTs = ns,
                 bananaTs = now
               )
             )
@@ -156,10 +156,10 @@ case class Process(store: Store) extends Logging {
             oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
             symbol <- EitherT(store.getInstrument(oid))
             msc    <- EitherT(store.getSecond)
-            mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+            ns     <- EitherT.rightT[Task, AppError](Nano.fromSecondAndNano(msc, a.getNanos))
             dec    <- EitherT(store.getDecimalsInPrice(oid))
             _ <- EitherT(
-              store.updateKline(
+              store.updateTradeStat(
                 oid = oid,
                 symbol = symbol,
                 seq = seq,
@@ -170,8 +170,12 @@ case class Process(store: Store) extends Logging {
                 lastAuctionPx = Price(a.getLastAuctionPrice),
                 avgpx = Price(a.getAveragePrice),
                 turnOverQty = Qty(a.getTurnOverQuantity),
+                turnOverVal = Price8(a.getTurnOverValue),
+                reportedTurnOverQty = Qty(a.getReportedTurnOverQuantity),
+                reportedTurnOverVal = Price8(a.getTurnOverValue),
+                totalNumberTrades = Qty(a.getTotalNumberOfTrades),
                 decimalsInPrice = dec,
-                marketTs = mms,
+                marketTs = ns,
                 bananaTs = now
               )
             )
@@ -182,7 +186,7 @@ case class Process(store: Store) extends Logging {
             oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
             symbol <- EitherT(store.getInstrument(oid))
             msc    <- EitherT(store.getSecond)
-            mms    <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
+            ns     <- EitherT.rightT[Task, AppError](Nano.fromSecondAndNano(msc, a.getNanos))
             dec    <- EitherT(store.getDecimalsInPrice(oid))
             _ <- EitherT(
               store.updateMarketStats(
@@ -200,7 +204,7 @@ case class Process(store: Store) extends Logging {
                 changePercent = a.getChangePercent,
                 tradeTs = a.getTimestamp,
                 decimalsInPrice = dec,
-                marketTs = mms,
+                marketTs = ns,
                 bananaTs = now
               )
             )
@@ -208,29 +212,20 @@ case class Process(store: Store) extends Logging {
 
         case a: ReferencePriceMessage =>
           (for {
-            msc <- EitherT(store.getSecond)
-            mms <- EitherT.rightT[Task, AppError](Micro.fromSecondAndMicro(msc, a.getNanos))
-            oid <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
-            dec <- EitherT(store.getDecimalsInPrice(oid))
+            msc    <- EitherT(store.getSecond)
+            ns     <- EitherT.rightT[Task, AppError](Nano.fromSecondAndNano(msc, a.getNanos))
+            oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
+            symbol <- EitherT(store.getInstrument(oid))
             _ <- EitherT(
-              store.updateMySqlIPOPrice(
+              store.updateReferencePrice(
                 oid = oid,
-                ipoPrice = Price(a.getPrice),
-                decimalsInPrice = dec
+                symbol = symbol,
+                priceType = a.getPriceType,
+                price = Price(a.getPrice),
+                marketTs = ns,
+                bananaTs = now
               )
             )
-            _ <- a.getPriceType match {
-              case 5 =>
-                EitherT(
-                  store.updateMySqlSettlementPrice(
-                    oid = oid,
-                    marketTs = mms,
-                    settlPrice = Price(a.getPrice),
-                    decimalsInPrice = dec
-                  )
-                )
-              case _ => EitherT.rightT[Task, AppError](())
-            }
           } yield ()).value
 
         case _ =>

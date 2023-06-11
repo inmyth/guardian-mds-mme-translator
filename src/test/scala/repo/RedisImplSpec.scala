@@ -51,7 +51,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
             contractMultiplier = contractMultiplier,
             settlMethod = settlMethod,
             decimalsInPrice = decimalsInPrice,
-            marketTs: Micro
+            marketTs =  marketTs
           )
           symbol <- store.getInstrument(oid)
         } yield symbol).runToFuture.map(_ shouldBe Right(symbol))
@@ -232,7 +232,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           marketTs = marketTs,
           bananaTs = bananaTs
         )
-        _ <- store.updateKline(
+        _ <- store.updateTradeStat(
           oid = oid,
           symbol = symbol,
           seq = seq,
@@ -243,6 +243,10 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           lastAuctionPx = askPrice5,
           avgpx = askPrice6,
           turnOverQty = askQty1,
+          turnOverVal =  tradedValB,
+          reportedTurnOverQty = askQty2,
+          reportedTurnOverVal = tradedValA,
+          totalNumberTrades = tradedVolA,
           decimalsInPrice = decimalsInPrice,
           marketTs = marketTs,
           bananaTs = bananaTs
@@ -276,7 +280,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           id.get(store).asInstanceOf[String]
         }
         prjKey <- Task(store.asInstanceOf[RedisImpl].keyProjected(symbol))
-        kliKey <- Task(store.asInstanceOf[RedisImpl].keyKlein(symbol))
+        kliKey <- Task(store.asInstanceOf[RedisImpl].keyStat(symbol))
         marKey <- Task(store.asInstanceOf[RedisImpl].keyMarketStats(symbol))
         prjId <- Task(
           com.get
