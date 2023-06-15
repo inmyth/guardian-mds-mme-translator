@@ -53,37 +53,10 @@ abstract class Store(val channel: Channel) extends Logging {
       decimalsInPrice: Short
   ): Task[Either[AppError, Unit]] =
     (for {
-      _ <- EitherT.right[AppError](acts.map(p => updateOrderbookNonAggregate(seq, orderbookId, p, decimalsInPrice)).sequence)
-    } yield ()).value
-
-  def updateOrderbookNonAggregate(
-      seq: Long,
-      orderbookId: OrderbookId,
-      item: FlatPriceLevelAction,
-      decimalsInPrice: Short
-  ): Task[Either[AppError, Unit]] =
-    (for {
-      maybeItem <- EitherT(getLastOrderbookItem(item.symbol, decimalsInPrice))
-      lastItem <-
-        if (maybeItem.isDefined) {
-          EitherT.rightT[Task, AppError](maybeItem.get)
-        }
-        else {
-          EitherT.rightT[Task, AppError](OrderbookItem.empty(item.maxLevel))
-        }
-      nuPriceLevels <- EitherT.fromEither[Task](buildPriceLevels(lastItem, item))
-      update <- EitherT.rightT[Task, AppError](
-        OrderbookItem.reconstruct(
-          nuPriceLevels,
-          side = item.side.value,
-          seq = seq,
-          maxLevel = item.maxLevel,
-          marketTs = item.marketTs,
-          bananaTs = item.bananaTs,
-          origin = lastItem
-        )
-      )
-      _ <- EitherT(saveOrderbookItem(item.symbol, orderbookId, update, decimalsInPrice))
+      ref       <- EitherT.rightT[Task, AppError](acts.head)
+      maybeItem <- EitherT(getLastOrderbookItem(ref.symbol, decimalsInPrice))
+      update    <- EitherT(updateOrderbookAggregate(seq, maybeItem, acts))
+      _         <- EitherT(saveOrderbookItem(ref.symbol, orderbookId, update, decimalsInPrice))
     } yield ()).value
 
   def updateOrderbookAggregate(

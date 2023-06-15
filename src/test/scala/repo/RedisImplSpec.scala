@@ -4,7 +4,7 @@ package repo
 import AppError.SymbolNotFound
 import Config.RedisConfig
 import Fixtures._
-import entity.{Micro, OrderbookId, Qty}
+import entity.{Micro, Nano, OrderbookId, Qty, Side}
 
 import io.lettuce.core.api.sync.RedisCommands
 import io.lettuce.core.{Limit, Range}
@@ -51,7 +51,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
             contractMultiplier = contractMultiplier,
             settlMethod = settlMethod,
             decimalsInPrice = decimalsInPrice,
-            marketTs =  marketTs
+            marketTs = marketTs
           )
           symbol <- store.getInstrument(oid)
         } yield symbol).runToFuture.map(_ shouldBe Right(symbol))
@@ -93,8 +93,33 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           )
         )
       }
+      "D" in {
+        (for {
+          _ <- store.updateOrderbook(
+            seq,
+            oid,
+            List(action.copy(numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3)),
+            decimalsInPrice
+          )
+          last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
+        } yield last).runToFuture.map(p =>
+          p shouldBe Right(
+            Some(
+              OrderbookItem(
+                seq,
+                maxLevel,
+                asks = Vector(),
+                bids = Vector(),
+                marketTs = askTime3,
+                bananaTs = bananaTs
+              )
+            )
+          )
+        )
+      }
       "U" in {
         (for {
+          _ <- store.updateOrderbook(seq, oid, List(action.copy(levelUpdateAction = 'N')), decimalsInPrice)
           _ <- store.updateOrderbook(
             seq,
             oid,
@@ -117,29 +142,66 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           )
         )
       }
-      "D" in {
-        (for {
-          _ <- store.updateOrderbook(
-            seq,
-            oid,
-            List(action.copy(level = 1, numDeletes = 1, levelUpdateAction = 'D', marketTs = askTime3)),
-            decimalsInPrice
-          )
-          last <- store.getLastOrderbookItem(symbol, decimalsInPrice)
-        } yield last).runToFuture.map(p =>
-          p shouldBe Right(
-            Some(
-              OrderbookItem(
-                seq,
-                maxLevel,
-                asks = Vector(),
-                bids = Vector(),
-                marketTs = askTime3,
-                bananaTs = bananaTs
+      "multiple actions at once" should {
+        "aggregate all actions and save them as one" in {
+          (for {
+            _ <- store.updateOrderbook(
+              seq + 1,
+              oid,
+              List(
+                action
+                  .copy(
+                    level = 1,
+                    levelUpdateAction = 'N',
+                    side = Side('B'),
+                    price = bidPrice1,
+                    qty = bidQty1,
+                    marketTs = bidTime5
+                  ),
+                action.copy(
+                  level = 2,
+                  levelUpdateAction = 'N',
+                  side = Side('B'),
+                  price = bidPrice2,
+                  qty = bidQty2,
+                  marketTs = bidTime5
+                ),
+                action
+                  .copy(
+                    level = 1,
+                    levelUpdateAction = 'U',
+                    side = Side('B'),
+                    price = bidPrice3,
+                    qty = bidQty3,
+                    marketTs = bidTime5
+                  ),
+                action
+                  .copy(
+                    level = 2,
+                    levelUpdateAction = 'D',
+                    numDeletes = 1,
+                    side = Side('B'),
+                    marketTs = bidTime5
+                  )
+              ),
+              decimalsInPrice
+            )
+            a <- store.getLastOrderbookItem(symbol, decimalsInPrice)
+          } yield a).runToFuture.map(p =>
+            p shouldBe Right(
+              Some(
+                OrderbookItem(
+                  seq + 1,
+                  maxLevel,
+                  bids = Vector(Some(bidPrice3, bidQty3, bidTime5)),
+                  asks = Vector(Some((askPrice2, askQty2, askTime2))),
+                  bananaTs = bananaTs,
+                  marketTs = bidTime5
+                )
               )
             )
           )
-        )
+        }
       }
     }
     "updateTicker" when {
@@ -243,7 +305,7 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
           lastAuctionPx = askPrice5,
           avgpx = askPrice6,
           turnOverQty = askQty1,
-          turnOverVal =  tradedValB,
+          turnOverVal = tradedValB,
           reportedTurnOverQty = askQty2,
           reportedTurnOverVal = tradedValA,
           totalNumberTrades = tradedVolA,
