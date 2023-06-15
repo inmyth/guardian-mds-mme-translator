@@ -602,5 +602,8 @@ object Store {
   def bigDecimalToInt(b: BigDecimal, decimals: Short): Int   = Math.round((b * Math.pow(10, decimals)).toFloat)
 
   def redis(channel: Channel, redisConfig: RedisConfig): Store =
-    new RedisImpl(channel, RedisClient.create(s"redis://${redisConfig.host}:${redisConfig.port}"))
+    new RedisImpl(
+      channel,
+      RedisClient.create(s"redis://${redisConfig.host}:${redisConfig.port}/${redisConfig.number.getOrElse("0")}")
+    )
 }

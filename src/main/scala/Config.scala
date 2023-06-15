@@ -25,7 +25,7 @@ object Config {
 
   case class KafkaConfig(server: String, topic: Option[String], batchSize: Option[Int])
 
-  case class RedisConfig(host: String, port: Int, password: Option[String])
+  case class RedisConfig(host: String, port: Int, password: Option[String], number: Option[Int])
 
   sealed trait Channel
 

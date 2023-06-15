@@ -382,6 +382,6 @@ class RedisImplSpec extends AsyncWordSpec with Matchers {
 
 object RedisImplSpec {
 
-  val redisConfig: RedisConfig = RedisConfig("localhost", 6379, None)
+  val redisConfig: RedisConfig = RedisConfig("localhost", 6379, None, Some(0))
   val store: Store             = Store.redis(channel, redisConfig)
 }
