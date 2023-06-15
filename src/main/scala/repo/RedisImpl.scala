@@ -299,7 +299,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
             this.tq              -> tq.value.toString,
             this.action          -> action.toString,
             this.tradeReportCode -> tradeReportCode.toString,
-            this.dealSource      -> dealSource.toChar.toString,
+            this.dealSource      -> dealSource.toString,
             this.tss             -> marketTs.value,
             this.tsb             -> bananaTs.value.toString
           ).asJava
@@ -520,7 +520,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
         commands.get.xadd(
           klk,
           Map(
-            this.priceType -> priceType.toChar.toString,
+            this.priceType -> priceType.toString,
             this.price     -> price.value.toString,
             this.tss       -> marketTs.value,
             this.tsb       -> bananaTs.value.toString
