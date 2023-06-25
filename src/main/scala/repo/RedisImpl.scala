@@ -29,6 +29,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   val keyMarketStats: Instrument => String                   = (symbol: Instrument) => s"id:mkt:${symbol.value}"
   val keyDecimalsInPrice: String                             = s"${channel.toString}:decimalsInPrice"
   val keyReferencePrice: Instrument => String                = (symbol: Instrument) => s"${channel.toString}:refprice:${symbol.value}"
+  val cacheInstrument: mutable.Map[OrderbookId, Instrument]  = mutable.Map.empty
   val cacheOrderbook: mutable.Map[Instrument, OrderbookItem] = mutable.Map.empty
 
   override def connect(): Task[Either[AppError, Unit]] = {
@@ -91,27 +92,26 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
       marketTs: Nano
   ): Task[Either[AppError, Unit]] =
     (for {
+      _ <- EitherT.rightT[Task, AppError](cacheInstrument += oid -> symbol)
       _ <- EitherT.rightT[Task, AppError](commands.get.hset(keyTradableInstrument, oid.value.toString, symbol.value))
     } yield ()).value
 
   override def getInstrument(oid: OrderbookId): Task[Either[AppError, Instrument]] =
     (for {
-      res <- EitherT.fromEither[Task](
-        Option(commands.get.hget(keyTradableInstrument, oid.value.toString))
-          .fold(SymbolNotFound(oid).asLeft[Instrument])(p => Instrument(p).asRight)
-      )
+      res <-
+        EitherT.fromEither[Task](cacheInstrument.get(oid).fold(SymbolNotFound(oid).asLeft[Instrument])(p => p.asRight))
     } yield res).value
 
-  private val id                    = "id"
-  private val a                     = "a"
-  private val b                     = "b"
-  private val aq                    = "aq"
-  private val bq                    = "bq"
-  private val at                    = "at"
-  private val bt                    = "bt"
-  private val tss                   = "tss"
-  private val tsb                   = "tsb"
-  private val maxLevel              = "maxLevel"
+  private val id       = "id"
+  private val a        = "a"
+  private val b        = "b"
+  private val aq       = "aq"
+  private val bq       = "bq"
+  private val at       = "at"
+  private val bt       = "bt"
+  private val tss      = "tss"
+  private val tsb      = "tsb"
+  private val maxLevel = "maxLevel"
 
   override def getLastOrderbookItem(
       symbol: Instrument,
