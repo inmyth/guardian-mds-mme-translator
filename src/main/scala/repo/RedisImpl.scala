@@ -14,22 +14,22 @@ import monix.eval.Task
 
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsJava, MapHasAsScala}
-import scala.util.matching.Regex
 import scala.util.{Failure, Success, Try}
 
 class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   private var connection: Option[StatefulRedisConnection[String, String]] = Option.empty
   private var commands: Option[RedisCommands[String, String]]             = Option.empty
 
-  val keyTradableInstrument                   = s"${channel.toString}:symbol_reference"
-  val keySecond                               = s"${channel.toString}:second"
-  val keyOrderbook: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
-  val keyTicker: Instrument => String         = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
-  val keyProjected: Instrument => String      = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
-  val keyStat: Instrument => String           = (symbol: Instrument) => s"${channel.toString}:stat:${symbol.value}"
-  val keyMarketStats: Instrument => String    = (symbol: Instrument) => s"id:mkt:${symbol.value}"
-  val keyDecimalsInPrice: String              = s"${channel.toString}:decimalsInPrice"
-  val keyReferencePrice: Instrument => String = (symbol: Instrument) => s"${channel.toString}:refprice:${symbol.value}"
+  val keyTradableInstrument                                  = s"${channel.toString}:symbol_reference"
+  val keySecond                                              = s"${channel.toString}:second"
+  val keyOrderbook: Instrument => String                     = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
+  val keyTicker: Instrument => String                        = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
+  val keyProjected: Instrument => String                     = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
+  val keyStat: Instrument => String                          = (symbol: Instrument) => s"${channel.toString}:stat:${symbol.value}"
+  val keyMarketStats: Instrument => String                   = (symbol: Instrument) => s"id:mkt:${symbol.value}"
+  val keyDecimalsInPrice: String                             = s"${channel.toString}:decimalsInPrice"
+  val keyReferencePrice: Instrument => String                = (symbol: Instrument) => s"${channel.toString}:refprice:${symbol.value}"
+  val cacheOrderbook: mutable.Map[Instrument, OrderbookItem] = mutable.Map.empty
 
   override def connect(): Task[Either[AppError, Unit]] = {
     Try {
@@ -112,93 +112,13 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   private val tss                   = "tss"
   private val tsb                   = "tsb"
   private val maxLevel              = "maxLevel"
-  private val bracketPattern: Regex = "(?<=\\[).+?(?=])".r
-
-  private val mapToPrices: (mutable.Map[String, String], String, Short) => Array[Price] = (map, key, decInPrice) =>
-    map
-      .get(key)
-      .flatMap(p => bracketPattern findFirstIn p)
-      .getOrElse("")
-      .split(",")
-      .flatMap(p => Option(p).filter(_.trim.nonEmpty))
-      .map(p => Price(Store.bigDecimalToInt(p.toFloat, decInPrice)))
-
-  private val mapToQty: (mutable.Map[String, String], String) => Array[Qty] = (map, key) =>
-    map
-      .get(key)
-      .flatMap(p => bracketPattern findFirstIn p)
-      .getOrElse("")
-      .split(",")
-      .flatMap(p => Option(p).filter(_.trim.nonEmpty))
-      .map(p => Qty(p.toLong))
-
-  private val mapToMicro: (mutable.Map[String, String], String) => Array[Micro] = (map, key) =>
-    map
-      .get(key)
-      .flatMap(p => bracketPattern findFirstIn p)
-      .getOrElse("")
-      .split(",")
-      .flatMap(p => Option(p).filter(_.trim.nonEmpty))
-      .map(p => Micro(p.toLong))
-
-  private val mapToNano: (mutable.Map[String, String], String) => Array[Nano] = (map, key) =>
-    map
-      .get(key)
-      .flatMap(p => bracketPattern findFirstIn p)
-      .getOrElse("")
-      .split(",")
-      .flatMap(p => Option(p).filter(_.trim.nonEmpty))
-      .map(p => Nano(p))
 
   override def getLastOrderbookItem(
       symbol: Instrument,
       decimalsInPrice: Short
   ): Task[Either[AppError, Option[OrderbookItem]]] =
     (for {
-      obk <- EitherT.rightT[Task, AppError](keyOrderbook(symbol))
-      res <- EitherT.rightT[Task, AppError](
-        commands.get
-          .xrevrange(obk, Range.create("-", "+"), Limit.create(0, 1))
-          .asScala
-          .headOption
-          .map(p => {
-            val body      = p.getBody.asScala
-            val seq       = body.getOrElse(id, "-1").toLong
-            val maxLevel  = body.getOrElse(this.maxLevel, "10").toInt
-            val marketTs  = Nano(body.getOrElse(this.tss, "0"))
-            val bananaTs  = Micro(body.getOrElse(this.tsb, "0").toLong)
-            val askPrices = mapToPrices(body, a, decimalsInPrice)
-            val bidPrices = mapToPrices(body, b, decimalsInPrice)
-            val askQtys   = mapToQty(body, aq)
-            val bidQtys   = mapToQty(body, bq)
-            val askTimes  = mapToNano(body, at)
-            val bidTimes  = mapToNano(body, bt)
-            val asks = askPrices
-              .zip(askQtys)
-              .zip(askTimes)
-              .map {
-                case ((px, qt), _) if px.value == 0 && qt.value == 0L => None
-                case ((px, qt), t)                                    => Some((px, qt, t))
-              }
-              .toVector
-            val bids = bidPrices
-              .zip(bidQtys)
-              .zip(bidTimes)
-              .map {
-                case ((px, qt), _) if px.value == 0 && qt.value == 0L => None
-                case ((px, qt), t)                                    => Some((px, qt, t))
-              }
-              .toVector
-            OrderbookItem(
-              seq = seq,
-              maxLevel = maxLevel,
-              bids = bids,
-              asks = asks,
-              marketTs = marketTs,
-              bananaTs = bananaTs
-            )
-          })
-      )
+      res <- EitherT.rightT[Task, AppError](cacheOrderbook.get(symbol))
     } yield res).value
 
   override def saveOrderbookItem(
@@ -209,6 +129,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   ): Task[Either[AppError, Unit]] =
     (for {
       obk <- EitherT.rightT[Task, AppError](keyOrderbook(symbol))
+      _   <- EitherT.rightT[Task, AppError](cacheOrderbook += symbol -> item)
       _ <- EitherT.rightT[Task, AppError] {
         val id       = item.seq
         val maxLevel = item.maxLevel
