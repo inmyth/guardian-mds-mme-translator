@@ -21,7 +21,6 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   private var commands: Option[RedisCommands[String, String]]             = Option.empty
 
   val keyTradableInstrument                                  = s"${channel.toString}:symbol_reference"
-  val keySecond                                              = s"${channel.toString}:second"
   val keyOrderbook: Instrument => String                     = (symbol: Instrument) => s"${channel.toString}:orderbook:${symbol.value}"
   val keyTicker: Instrument => String                        = (symbol: Instrument) => s"${channel.toString}:tick:${symbol.value}"
   val keyProjected: Instrument => String                     = (symbol: Instrument) => s"${channel.toString}:projected:${symbol.value}"
@@ -31,6 +30,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   val keyReferencePrice: Instrument => String                = (symbol: Instrument) => s"${channel.toString}:refprice:${symbol.value}"
   val cacheInstrument: mutable.Map[OrderbookId, Instrument]  = mutable.Map.empty
   val cacheOrderbook: mutable.Map[Instrument, OrderbookItem] = mutable.Map.empty
+  var cacheSecond: Option[Int] = None
 
   override def connect(): Task[Either[AppError, Unit]] = {
     Try {
@@ -58,16 +58,12 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   val value = "value"
   override def saveSecond(unixSecond: Int): Task[Either[AppError, Unit]] =
     (for {
-      _ <- EitherT.rightT[Task, AppError](
-        Option(commands.get.hset(keySecond, this.value, unixSecond.toString))
-      )
+      _ <- EitherT.rightT[Task, AppError](this.cacheSecond = Some(unixSecond))
     } yield ()).value
 
   override def getSecond: Task[Either[AppError, Int]] =
     (for {
-      s <- EitherT.fromEither[Task](
-        Option(commands.get.hget(keySecond, this.value)).fold(SecondNotFound.asLeft[Int])(p => p.toInt.asRight)
-      )
+      s <- EitherT.fromEither[Task](cacheSecond.fold(SecondNotFound.asLeft[Int])(p => p.asRight))
     } yield s).value
 
   override def saveTradableInstrument(
