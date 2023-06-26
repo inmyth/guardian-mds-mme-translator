@@ -28,8 +28,9 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   val keyMarketStats: Instrument => String                   = (symbol: Instrument) => s"id:mkt:${symbol.value}"
   val keyDecimalsInPrice: String                             = s"${channel.toString}:decimalsInPrice"
   val keyReferencePrice: Instrument => String                = (symbol: Instrument) => s"${channel.toString}:refprice:${symbol.value}"
-  val cacheInstrument: mutable.Map[OrderbookId, Instrument]  = mutable.Map.empty
-  val cacheOrderbook: mutable.Map[Instrument, OrderbookItem] = mutable.Map.empty
+  val cacheInstrument: mutable.Map[OrderbookId, Instrument]  = mutable.HashMap.empty
+  val cacheOrderbook: mutable.Map[Instrument, OrderbookItem] = mutable.HashMap.empty
+  val cacheDecimalsInPrice: mutable.Map[OrderbookId, Short]  = mutable.HashMap.empty
   var cacheSecond: Option[Int]                               = None
 
   override def connect(): Task[Either[AppError, Unit]] = {
@@ -410,15 +411,13 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
 
   override def saveDecimalsInPrice(oid: OrderbookId, d: Short): Task[Either[AppError, Unit]] =
     (for {
+      _ <- EitherT.rightT[Task, AppError](cacheDecimalsInPrice += oid -> d)
       _ <- EitherT.rightT[Task, AppError](commands.get.hset(keyDecimalsInPrice, oid.value.toString, d.toString))
     } yield ()).value
 
   override def getDecimalsInPrice(oid: OrderbookId): Task[Either[AppError, Short]] =
     (for {
-      res <- EitherT.fromEither[Task](
-        Option(commands.get.hget(keyDecimalsInPrice, oid.value.toString))
-          .fold(1.asInstanceOf[Short].asRight)(p => p.toShort.asRight)
-      )
+      res <- EitherT.fromEither[Task](cacheDecimalsInPrice.get(oid).fold(1.asInstanceOf[Short].asRight)(p => p.asRight))
     } yield res).value
 
   val priceType = "price_type"
