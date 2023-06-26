@@ -30,7 +30,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
   val keyReferencePrice: Instrument => String                = (symbol: Instrument) => s"${channel.toString}:refprice:${symbol.value}"
   val cacheInstrument: mutable.Map[OrderbookId, Instrument]  = mutable.Map.empty
   val cacheOrderbook: mutable.Map[Instrument, OrderbookItem] = mutable.Map.empty
-  var cacheSecond: Option[Int] = None
+  var cacheSecond: Option[Int]                               = None
 
   override def connect(): Task[Either[AppError, Unit]] = {
     Try {
@@ -428,6 +428,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
       symbol: Instrument,
       priceType: Byte,
       price: Price,
+      decimalsInPrice: Short,
       marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] =
@@ -438,7 +439,7 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
           klk,
           Map(
             this.priceType -> priceType.toString,
-            this.price     -> price.value.toString,
+            this.price     -> Store.longToBigDecimal(price.value, decimalsInPrice).toString,
             this.tss       -> marketTs.value,
             this.tsb       -> bananaTs.value.toString
           ).asJava

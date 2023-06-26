@@ -19,7 +19,7 @@ case class Process(store: Store) extends Logging {
   val channel: Config.Channel = store.channel
 
   def process(seq: Long, bytes: Array[Byte]): Task[Either[AppError, Unit]] =
-    (for {
+    for {
       now <- Task.now(Micro(System.currentTimeMillis() * 1000))
       _   <- Task(logger.info(s"seq $seq"))
       msg <- Task(messageFactory.parse(ByteBuffer.wrap(bytes)))
@@ -216,12 +216,14 @@ case class Process(store: Store) extends Logging {
             ns     <- EitherT.rightT[Task, AppError](Nano.fromSecondAndNano(msc, a.getNanos))
             oid    <- EitherT.rightT[Task, AppError](OrderbookId(a.getOrderBookId))
             symbol <- EitherT(store.getInstrument(oid))
+            dec    <- EitherT(store.getDecimalsInPrice(oid))
             _ <- EitherT(
               store.updateReferencePrice(
                 oid = oid,
                 symbol = symbol,
                 priceType = a.getPriceType,
                 price = Price(a.getPrice),
+                decimalsInPrice = dec,
                 marketTs = ns,
                 bananaTs = now
               )
@@ -233,5 +235,5 @@ case class Process(store: Store) extends Logging {
             _ <- EitherT.rightT[Task, AppError](logger.info(s"Unparsed message: ${msg.getClass}"))
           } yield ()).value
       }
-    } yield res)
+    } yield res
 }

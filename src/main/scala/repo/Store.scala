@@ -212,6 +212,7 @@ abstract class Store(val channel: Channel) extends Logging {
       symbol: Instrument,
       priceType: Byte,
       price: Price,
+      decimalsInPrice: Short,
       marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]]
@@ -504,6 +505,7 @@ class InMemImpl(channel: Channel) extends Store(channel) {
       symbol: Instrument,
       priceType: Byte,
       price: Price,
+      decimalsInPrice: Short,
       marketTs: Nano,
       bananaTs: Micro
   ): Task[Either[AppError, Unit]] = {
