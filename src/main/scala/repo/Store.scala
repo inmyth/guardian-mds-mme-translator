@@ -606,6 +606,6 @@ object Store {
   def redis(channel: Channel, redisConfig: RedisConfig): Store =
     new RedisImpl(
       channel,
-      RedisClient.create(s"redis://${redisConfig.host}:${redisConfig.port}/${redisConfig.number.getOrElse("0")}")
+      RedisClient.create(s"""redis://${redisConfig.password.fold("")(p => s":$p@")}${redisConfig.host}:${redisConfig.port}/${redisConfig.number.getOrElse("0")}""")
     )
 }

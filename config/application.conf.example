@@ -8,5 +8,6 @@ redis-config = {
   host = "localhost"
   port = 6379
   number = 0
+  password = "[optional]password"
 }
 filename = "[optional] dump file path"
