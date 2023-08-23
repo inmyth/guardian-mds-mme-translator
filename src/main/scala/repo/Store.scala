@@ -604,8 +604,11 @@ object Store {
   def bigDecimalToInt(b: BigDecimal, decimals: Short): Int   = Math.round((b * Math.pow(10, decimals)).toFloat)
 
   def redis(channel: Channel, redisConfig: RedisConfig): Store =
+    val redisAuth = s"""${redisConfig.username.getOrElse("")}:${redisConfig.password.getOrElse("")}"""
     new RedisImpl(
       channel,
-      RedisClient.create(s"""redis://${redisConfig.password.fold("")(p => s":$p@")}${redisConfig.host}:${redisConfig.port}/${redisConfig.number.getOrElse("0")}""")
+      RedisClient.create(
+        s"""redis://${redisAuth}@${redisConfig.host}:${redisConfig.port}/${redisConfig.number.getOrElse("0")}"""
+      )
     )
 }
