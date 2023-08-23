@@ -603,12 +603,13 @@ object Store {
   def longToBigDecimal(l: Long, decimals: Short): BigDecimal = BigDecimal(l / Math.pow(10, decimals))
   def bigDecimalToInt(b: BigDecimal, decimals: Short): Int   = Math.round((b * Math.pow(10, decimals)).toFloat)
 
-  def redis(channel: Channel, redisConfig: RedisConfig): Store =
+  def redis(channel: Channel, redisConfig: RedisConfig): Store = {
     val redisAuth = s"""${redisConfig.username.getOrElse("")}:${redisConfig.password.getOrElse("")}"""
     new RedisImpl(
       channel,
       RedisClient.create(
-        s"""redis://${redisAuth}@${redisConfig.host}:${redisConfig.port}/${redisConfig.number.getOrElse("0")}"""
+        s"""redis://$redisAuth@${redisConfig.host}:${redisConfig.port}/${redisConfig.number.getOrElse("0")}"""
       )
     )
+  }
 }
