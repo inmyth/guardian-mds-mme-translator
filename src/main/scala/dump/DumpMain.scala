@@ -20,9 +20,8 @@ object DumpMain extends ZIOAppDefault {
           .leftMap(e => ConfigError(s"Cannot load config: $e"))
       )
       filename <- ZIO.fromEither(conf.filename.fold(ConfigError(s"No file dump").asLeft[String])(p => p.asRight))
-      dumper   <- ZIO.succeed(DumpService.setup(conf, filename))
-      _        <- ZIO.fromMonixTask(dumper.connectToStore())
-      _        <- dumper.p.runDrain
+      dumper   <- ZIO.succeed(DumpServiceKafka.setup(conf, filename))
+      _        <- dumper.p.runDrain.provide(dumper.producer)
     } yield ()
   }
 }
