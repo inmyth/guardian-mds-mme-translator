@@ -37,10 +37,14 @@ class RedisImpl(channel: Channel, client: RedisClient) extends Store(channel) {
     Try {
       client.connect()
     } match {
-      case Failure(exception) => RedisConnectionError(exception.toString).asLeft.pure[Task]
+      case Failure(exception) => {
+        logger.error(s"Error while connecting to Redis: ${exception.toString}")
+        RedisConnectionError(exception.toString).asLeft.pure[Task]
+      }
       case Success(con) =>
         connection = Some(con)
         commands = Some(con.sync())
+        logger.info("Successfully connected to Redis")
         ().asRight.pure[Task]
     }
   }
