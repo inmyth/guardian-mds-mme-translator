@@ -8,7 +8,7 @@ import repo.InMemImpl._
 
 import cats.data.EitherT
 import cats.implicits.{catsSyntaxApplicativeId, catsSyntaxEitherId, toTraverseOps}
-import io.lettuce.core.RedisClient
+import io.lettuce.core.{RedisClient, RedisURI}
 import monix.eval.Task
 import org.apache.logging.log4j.scala.Logging
 
@@ -604,12 +604,17 @@ object Store {
   def bigDecimalToInt(b: BigDecimal, decimals: Short): Int   = Math.round((b * Math.pow(10, decimals)).toFloat)
 
   def redis(channel: Channel, redisConfig: RedisConfig): Store = {
-    val redisAuth = s"""${redisConfig.username.getOrElse("")}:${redisConfig.password.getOrElse("")}"""
+    val builder = RedisURI.builder.withHost(redisConfig.host).withPort(redisConfig.port).withDatabase(redisConfig.number.getOrElse(0))
+    val username = redisConfig.username.getOrElse("")
+    val password = redisConfig.password.getOrElse("")
+    if (username.size > 0 && password.size > 0) {
+      builder.withAuthentication(username, password)
+    } else if (password.size > 0) {
+      builder.withPassword(password)
+    }
     new RedisImpl(
       channel,
-      RedisClient.create(
-        s"""redis://$redisAuth@${redisConfig.host}:${redisConfig.port}/${redisConfig.number.getOrElse("0")}"""
-      )
+      RedisClient.create(builder.build())
     )
   }
 }
